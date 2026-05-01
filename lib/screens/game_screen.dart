@@ -22,6 +22,8 @@ import '../app/app_routes.dart';
 import '../components/achievement_popup.dart';
 import '../game/freefall_game.dart';
 import '../models/achievement.dart';
+import '../models/player_skin.dart';
+import '../services/google_play_games_stub.dart';
 import '../systems/achievement_manager.dart';
 import 'pause_screen.dart';
 import 'run_summary_screen.dart';
@@ -45,6 +47,11 @@ class _GameScreenState extends State<GameScreen> {
   /// resolve in didChangeDependencies (the first build is when
   /// AppDependencies is reachable).
   AchievementManager? _achievementManager;
+
+  /// Phase 13: equipped skin pulled from the StoreRepository. Used to
+  /// tint the share-image orb. Defaults to the default skin so the
+  /// summary screen renders even before the async lookup lands.
+  SkinId _equippedSkinForShare = SkinId.defaultOrb;
 
   @override
   void initState() {
@@ -75,6 +82,16 @@ class _GameScreenState extends State<GameScreen> {
     // who muted between runs doesn't hear the next session.
     deps.audioService.syncFromSettings(deps.settings);
     deps.ghostRunner.onRunStarted();
+    // Phase 13: snapshot the equipped skin once for the share card.
+    // Async — fire-and-forget; defaults stand in until the lookup
+    // resolves.
+    _resolveEquippedSkin(deps);
+  }
+
+  Future<void> _resolveEquippedSkin(AppDependencies deps) async {
+    final skin = await deps.storeRepo.getEquippedSkin();
+    if (!mounted) return;
+    setState(() => _equippedSkinForShare = skin);
   }
 
   void _onAchievementUnlocked(Achievement ach) {
@@ -140,12 +157,16 @@ class _GameScreenState extends State<GameScreen> {
       consecutiveDays: streak,
     );
     // Phase 10: persist the new best-run ghost iff the score beat the
-    // previous best. Mirror the score to Google Play Games (stub no-op).
+    // previous best.
     await deps.ghostRunner.maybeSaveBestRun(resolved.score);
+    // Phase 13: submit both score and depth to their respective Play
+    // Games / Game Center leaderboards. The service no-ops when the
+    // user is offline / not signed in so this stays fire-and-forget.
     await deps.gameServices.submitScore(
-      leaderboardId: 'main',
+      leaderboardId: GooglePlayGamesService.bestScoreLeaderboardId,
       score: resolved.score,
     );
+    await deps.gameServices.submitDepthScore(resolved.depthMeters);
     // Phase 11: stop the in-game music and play the new-high fanfare
     // if the run beat the previous record. We stop music regardless
     // so the summary screen isn't drowned out by a zone loop.
@@ -220,6 +241,8 @@ class _GameScreenState extends State<GameScreen> {
                     _game.scoreManager.snapshot(isNewHighScore: false),
                 adService: deps.adService,
                 coinRepo: deps.coinRepo,
+                shareService: deps.shareService,
+                equippedSkin: _equippedSkinForShare,
                 onPlayAgain: _restartRun,
                 onRevive: () {
                   // Phase-9 minimal revive: restart the run. A "true"

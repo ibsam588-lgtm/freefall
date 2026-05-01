@@ -28,9 +28,11 @@ import 'services/ad_service.dart';
 import 'services/admob_service.dart';
 import 'services/audio_service.dart';
 import 'services/audio_service_impl.dart';
+import 'services/google_play_games_service.dart';
 import 'services/google_play_games_stub.dart';
 import 'services/iap_service.dart';
 import 'services/settings_service.dart';
+import 'services/share_service.dart';
 import 'systems/achievement_manager.dart';
 import 'systems/ghost_runner.dart';
 
@@ -88,11 +90,19 @@ Future<void> main() async {
   );
   unawaited(iapService.init());
 
-  final achievementManager = AchievementManager();
-  await achievementManager.load();
+  // Phase 13: real Play Games / Game Center backend. The plugin
+  // tolerates platforms without native bindings (web, headless tests)
+  // by surfacing errors through its async returns; we wrap it
+  // defensively inside the service so a missing plugin gracefully
+  // collapses to the no-op base class behavior.
+  final GooglePlayGamesService gameServices = GamesServicesPlayGames();
   final ghostRunner = GhostRunner();
   await ghostRunner.load();
-  const gameServices = GooglePlayGamesStub();
+  final shareService = ShareService();
+  final achievementManager = AchievementManager(
+    gameServices: gameServices,
+  );
+  await achievementManager.load();
 
   // Phase 11: real flame_audio backend. Every primitive is wrapped in
   // try/catch so missing asset files (we ship without them) won't
@@ -115,6 +125,7 @@ Future<void> main() async {
     gameServices: gameServices,
     audioService: audioService,
     iapService: iapService,
+    shareService: shareService,
   ));
 }
 
@@ -131,6 +142,7 @@ class FreefallApp extends StatelessWidget {
   final GooglePlayGamesService gameServices;
   final AudioService audioService;
   final IapService iapService;
+  final ShareService shareService;
 
   const FreefallApp({
     super.key,
@@ -146,6 +158,7 @@ class FreefallApp extends StatelessWidget {
     required this.gameServices,
     required this.audioService,
     required this.iapService,
+    required this.shareService,
   });
 
   @override
@@ -163,6 +176,7 @@ class FreefallApp extends StatelessWidget {
       gameServices: gameServices,
       audioService: audioService,
       iapService: iapService,
+      shareService: shareService,
       child: MaterialApp(
         title: 'Freefall',
         debugShowCheckedModeBanner: false,

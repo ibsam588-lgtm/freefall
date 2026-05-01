@@ -7,6 +7,7 @@
 
 import 'package:flutter/material.dart';
 
+import '../app/app_routes.dart';
 import '../repositories/coin_repository.dart';
 import '../repositories/stats_repository.dart';
 import '../repositories/store_repository.dart';
@@ -86,6 +87,8 @@ class _StatsScreenState extends State<StatsScreen> {
                 _buildAchievements(_stats!),
                 const SizedBox(height: 16),
                 _buildAllAchievementsButton(),
+                const SizedBox(height: 8),
+                _buildViewLeaderboardButton(),
               ],
             ),
     );
@@ -227,20 +230,38 @@ class _StatsScreenState extends State<StatsScreen> {
     return SizedBox(
       width: double.infinity,
       child: FilledButton.tonal(
-        onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content:
-                Text('Full achievements panel arrives in Phase 10'),
-            duration: Duration(seconds: 1),
-            behavior: SnackBarBehavior.floating,
-          ),
-        ),
+        onPressed: () =>
+            Navigator.of(context).pushNamed(AppRoutes.achievements),
         style: FilledButton.styleFrom(
           padding: const EdgeInsets.symmetric(vertical: 14),
         ),
         child: const Text(
           'VIEW ALL ACHIEVEMENTS',
           style: TextStyle(
+            fontWeight: FontWeight.w900,
+            letterSpacing: 2,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildViewLeaderboardButton() {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: () =>
+            Navigator.of(context).pushNamed(AppRoutes.leaderboard),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: const Color(0xFF80DEEA),
+          side: const BorderSide(color: Color(0xFF80DEEA), width: 1.5),
+          padding: const EdgeInsets.symmetric(vertical: 14),
+        ),
+        icon: const Icon(Icons.leaderboard, size: 18),
+        label: const Text(
+          'VIEW LEADERBOARD',
+          style: TextStyle(
+            fontSize: 14,
             fontWeight: FontWeight.w900,
             letterSpacing: 2,
           ),

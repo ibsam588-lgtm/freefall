@@ -14,9 +14,11 @@
 
 import 'package:flutter/material.dart';
 
+import '../models/player_skin.dart';
 import '../models/run_stats.dart';
 import '../repositories/coin_repository.dart';
 import '../services/ad_service.dart';
+import '../services/share_service.dart';
 
 class RunSummaryScreen extends StatefulWidget {
   /// Run stats to display. The widget animates the score from 0 up to
@@ -41,6 +43,16 @@ class RunSummaryScreen extends StatefulWidget {
   /// this repo on a successful watch.
   final CoinRepository? coinRepo;
 
+  /// Phase 13: optional share pipeline. When wired, the SHARE button
+  /// renders + builds a branded image of the run and hands it to the
+  /// platform share sheet.
+  final ShareService? shareService;
+
+  /// Player's currently equipped skin id — drives the orb color on
+  /// the share card. Defaults to the default skin so the screen
+  /// renders without the cosmetics state being threaded through.
+  final SkinId equippedSkin;
+
   const RunSummaryScreen({
     super.key,
     required this.stats,
@@ -48,6 +60,8 @@ class RunSummaryScreen extends StatefulWidget {
     this.onRevive,
     this.adService,
     this.coinRepo,
+    this.shareService,
+    this.equippedSkin = SkinId.defaultOrb,
   });
 
   @override
@@ -67,6 +81,11 @@ class _RunSummaryScreenState extends State<RunSummaryScreen>
   /// Whether an ad watch is currently in flight. Disables both ad
   /// buttons so a flaky double-tap doesn't queue two reward grants.
   bool _adInFlight = false;
+
+  /// True while the share image is rendering / the share sheet is
+  /// open. Disables the SHARE button so a flaky double-tap doesn't
+  /// queue two share intents.
+  bool _shareInFlight = false;
 
   @override
   void initState() {
@@ -121,6 +140,25 @@ class _RunSummaryScreenState extends State<RunSummaryScreen>
         );
       },
     );
+  }
+
+  Future<void> _onShareTapped() async {
+    final share = widget.shareService;
+    if (share == null || _shareInFlight) return;
+    setState(() => _shareInFlight = true);
+    final outcome =
+        await share.shareScore(widget.stats, widget.equippedSkin);
+    if (!mounted) return;
+    setState(() => _shareInFlight = false);
+    if (outcome == ShareOutcome.failed) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Sharing unavailable'),
+          duration: Duration(seconds: 1),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   Future<void> _onDoubleCoinsTapped() async {
@@ -362,6 +400,29 @@ class _RunSummaryScreenState extends State<RunSummaryScreen>
             ),
           ),
         ),
+        if (widget.shareService != null) ...[
+          const SizedBox(height: 4),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _shareInFlight ? null : _onShareTapped,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF80DEEA),
+                side: const BorderSide(color: Color(0xFF80DEEA), width: 1.5),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+              icon: const Icon(Icons.share, size: 18),
+              label: Text(
+                _shareInFlight ? 'PREPARING…' : 'SHARE SCORE',
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 2,
+                ),
+              ),
+            ),
+          ),
+        ],
       ],
     );
   }

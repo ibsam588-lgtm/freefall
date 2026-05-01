@@ -21,6 +21,7 @@ import '../services/audio_service.dart';
 import '../services/google_play_games_stub.dart';
 import '../services/iap_service.dart';
 import '../services/settings_service.dart';
+import '../services/share_service.dart';
 import '../systems/achievement_manager.dart';
 import '../systems/ghost_runner.dart';
 
@@ -37,6 +38,7 @@ class AppDependencies extends InheritedWidget {
   final GooglePlayGamesService gameServices;
   final AudioService audioService;
   final IapService iapService;
+  final ShareService shareService;
 
   const AppDependencies({
     super.key,
@@ -52,6 +54,7 @@ class AppDependencies extends InheritedWidget {
     required this.gameServices,
     required this.audioService,
     required this.iapService,
+    required this.shareService,
     required super.child,
   });
 
@@ -80,6 +83,7 @@ class AppDependencies extends InheritedWidget {
         ghostRunner != oldWidget.ghostRunner ||
         gameServices != oldWidget.gameServices ||
         audioService != oldWidget.audioService ||
-        iapService != oldWidget.iapService;
+        iapService != oldWidget.iapService ||
+        shareService != oldWidget.shareService;
   }
 }

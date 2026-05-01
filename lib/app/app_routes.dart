@@ -81,7 +81,9 @@ class AppRoutes {
         ),
       leaderboard => MaterialPageRoute<void>(
           settings: settings,
-          builder: (_) => const LeaderboardScreen(),
+          builder: (ctx) => LeaderboardScreen(
+            gameServices: AppDependencies.of(ctx).gameServices,
+          ),
         ),
       achievements => MaterialPageRoute<void>(
           settings: settings,

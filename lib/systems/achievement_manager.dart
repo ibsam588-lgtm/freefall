@@ -32,10 +32,13 @@
 // persisted here — they live in the existing repos and are mirrored
 // into the manager via [updateFromRunStats] / [syncExternals].
 
+import 'dart:async';
+
 import '../models/achievement.dart';
 import '../models/run_stats.dart';
 import '../repositories/daily_login_repository.dart';
 import '../repositories/stats_repository.dart';
+import '../services/google_play_games_stub.dart';
 
 /// Discriminator for in-run events fed into [AchievementManager.onEvent].
 enum AchievementEventKind {
@@ -85,6 +88,16 @@ class AchievementManager {
 
   /// Phase 10 ships 20 achievements, all with coin reward 0. Future
   /// phases can opt in per-row.
+  ///
+  /// Phase 13 wires a [Achievement.playGamesId] per row so each
+  /// in-app unlock mirrors to a Google Play Games / Game Center
+  /// achievement. The CgkI_freefall_<id> placeholder format will be
+  /// replaced by the real CgkI... ids once Play Console provisioning
+  /// lands; the wire-up logic in [AchievementManager._checkAll] uses
+  /// whatever value is set, so no other code changes when the real
+  /// ids drop in.
+  static const String _pgPrefix = 'CgkI_freefall_';
+
   static const List<Achievement> catalog = <Achievement>[
     Achievement(
       id: 'fall_10km',
@@ -92,6 +105,7 @@ class AchievementManager {
       description: 'Fall 10,000m total.',
       targetValue: 10000,
       type: AchievementType.totalDepth,
+      playGamesId: '${_pgPrefix}fall_10km',
     ),
     Achievement(
       id: 'fall_50km',
@@ -99,6 +113,7 @@ class AchievementManager {
       description: 'Fall 50,000m total.',
       targetValue: 50000,
       type: AchievementType.totalDepth,
+      playGamesId: '${_pgPrefix}fall_50km',
     ),
     Achievement(
       id: 'fall_100km',
@@ -106,6 +121,7 @@ class AchievementManager {
       description: 'Fall 100,000m total.',
       targetValue: 100000,
       type: AchievementType.totalDepth,
+      playGamesId: '${_pgPrefix}fall_100km',
     ),
     Achievement(
       id: 'survive_3zones',
@@ -113,6 +129,7 @@ class AchievementManager {
       description: 'Survive 3 zones without being hit in one run.',
       targetValue: 3,
       type: AchievementType.zoneCompleteNoHit,
+      playGamesId: '${_pgPrefix}survive_3zones',
     ),
     Achievement(
       id: 'combo_10',
@@ -120,6 +137,7 @@ class AchievementManager {
       description: 'Reach a 10x combo.',
       targetValue: 10,
       type: AchievementType.comboReached,
+      playGamesId: '${_pgPrefix}combo_10',
     ),
     Achievement(
       id: 'gems_100_run',
@@ -127,6 +145,7 @@ class AchievementManager {
       description: 'Collect 100 gems in one run.',
       targetValue: 100,
       type: AchievementType.gemsInRun,
+      playGamesId: '${_pgPrefix}gems_100_run',
     ),
     Achievement(
       id: 'first_skin',
@@ -134,6 +153,7 @@ class AchievementManager {
       description: 'Buy your first cosmetic skin.',
       targetValue: 1,
       type: AchievementType.firstSkinBought,
+      playGamesId: '${_pgPrefix}first_skin',
     ),
     Achievement(
       id: 'maxed_upgrade',
@@ -141,6 +161,7 @@ class AchievementManager {
       description: 'Max out any powerup upgrade.',
       targetValue: 1,
       type: AchievementType.upgradeMaxed,
+      playGamesId: '${_pgPrefix}maxed_upgrade',
     ),
     Achievement(
       id: 'reach_core',
@@ -148,6 +169,7 @@ class AchievementManager {
       description: 'Reach the Core zone.',
       targetValue: 1,
       type: AchievementType.reachedCore,
+      playGamesId: '${_pgPrefix}reach_core',
     ),
     Achievement(
       id: 'lightning_death',
@@ -155,6 +177,7 @@ class AchievementManager {
       description: 'Die to a lightning bolt.',
       targetValue: 1,
       type: AchievementType.lightningDeaths,
+      playGamesId: '${_pgPrefix}lightning_death',
     ),
     Achievement(
       id: 'jellyfish_death',
@@ -162,6 +185,7 @@ class AchievementManager {
       description: 'Die to a jellyfish.',
       targetValue: 1,
       type: AchievementType.jellyfishDeaths,
+      playGamesId: '${_pgPrefix}jellyfish_death',
     ),
     Achievement(
       id: 'lava_death',
@@ -169,6 +193,7 @@ class AchievementManager {
       description: 'Die to a lava jet.',
       targetValue: 1,
       type: AchievementType.lavaDeaths,
+      playGamesId: '${_pgPrefix}lava_death',
     ),
     Achievement(
       id: 'coins_1000',
@@ -176,6 +201,7 @@ class AchievementManager {
       description: 'Earn 1,000 coins lifetime.',
       targetValue: 1000,
       type: AchievementType.lifetimeCoins,
+      playGamesId: '${_pgPrefix}coins_1000',
     ),
     Achievement(
       id: 'coins_10000',
@@ -183,6 +209,7 @@ class AchievementManager {
       description: 'Earn 10,000 coins lifetime.',
       targetValue: 10000,
       type: AchievementType.lifetimeCoins,
+      playGamesId: '${_pgPrefix}coins_10000',
     ),
     Achievement(
       id: 'near_miss_100',
@@ -190,6 +217,7 @@ class AchievementManager {
       description: 'Pull off 100 near-misses lifetime.',
       targetValue: 100,
       type: AchievementType.nearMissesTotal,
+      playGamesId: '${_pgPrefix}near_miss_100',
     ),
     Achievement(
       id: 'speed_gates_5',
@@ -197,6 +225,7 @@ class AchievementManager {
       description: 'Pass 5 speed gates in one run.',
       targetValue: 5,
       type: AchievementType.speedGatesInRun,
+      playGamesId: '${_pgPrefix}speed_gates_5',
     ),
     Achievement(
       id: 'streak_7',
@@ -204,6 +233,7 @@ class AchievementManager {
       description: 'Log in 7 consecutive days.',
       targetValue: 7,
       type: AchievementType.consecutiveDays,
+      playGamesId: '${_pgPrefix}streak_7',
     ),
     Achievement(
       id: 'all_zones',
@@ -211,6 +241,7 @@ class AchievementManager {
       description: 'Survive all 5 zones in one run.',
       targetValue: 5,
       type: AchievementType.allZonesInRun,
+      playGamesId: '${_pgPrefix}all_zones',
     ),
     Achievement(
       id: 'no_hit_zone',
@@ -218,6 +249,7 @@ class AchievementManager {
       description: 'Complete any zone without being hit.',
       targetValue: 1,
       type: AchievementType.zoneCompleteNoHit,
+      playGamesId: '${_pgPrefix}no_hit_zone',
     ),
     Achievement(
       id: 'combo_5_run',
@@ -225,6 +257,7 @@ class AchievementManager {
       description: 'Reach a 5x combo in one run.',
       targetValue: 5,
       type: AchievementType.comboInRun,
+      playGamesId: '${_pgPrefix}combo_5_run',
     ),
   ];
 
@@ -258,8 +291,16 @@ class AchievementManager {
 
   final LoginStorage storage;
 
-  AchievementManager({LoginStorage? storage})
-      : storage = storage ?? SharedPreferencesLoginStorage();
+  /// Phase 13: optional Play Games / Game Center mirror. When wired,
+  /// every freshly-unlocked achievement that has a [Achievement.playGamesId]
+  /// also fires [GooglePlayGamesService.unlockAchievement]. Null
+  /// gracefully no-ops, which lets unit tests skip the platform layer.
+  GooglePlayGamesService? gameServices;
+
+  AchievementManager({
+    LoginStorage? storage,
+    this.gameServices,
+  }) : storage = storage ?? SharedPreferencesLoginStorage();
 
   /// Fired the first frame [id] flips from locked to unlocked. The host
   /// wires this to the popup queue.
@@ -565,9 +606,14 @@ class AchievementManager {
 
     await storage.setString(_unlockedKey, _unlocked.join(_delim));
     final cb = onAchievementUnlocked;
-    if (cb != null) {
-      for (final ach in newlyUnlocked) {
-        cb(ach);
+    final services = gameServices;
+    for (final ach in newlyUnlocked) {
+      cb?.call(ach);
+      // Phase 13: mirror to Play Games / Game Center. Fire-and-forget;
+      // unlockAchievement no-ops cleanly when offline / not signed in.
+      final pgId = ach.playGamesId;
+      if (services != null && pgId != null) {
+        unawaited(services.unlockAchievement(pgId));
       }
     }
   }

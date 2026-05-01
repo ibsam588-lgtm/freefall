@@ -89,6 +89,13 @@ class Achievement {
   /// achievement at 0; future phases can opt in per-row).
   final int coinReward;
 
+  /// Phase-13 Google Play Games / Game Center achievement id this row
+  /// mirrors to on unlock. Null for in-app-only achievements (or until
+  /// Play Console provisioning lands and we can fill in real CgkI...
+  /// ids — for now we use a derived placeholder per row so the wire-up
+  /// can be exercised end-to-end).
+  final String? playGamesId;
+
   const Achievement({
     required this.id,
     required this.title,
@@ -96,6 +103,7 @@ class Achievement {
     required this.targetValue,
     required this.type,
     this.coinReward = 0,
+    this.playGamesId,
   });
 
   @override
@@ -106,11 +114,12 @@ class Achievement {
       other.description == description &&
       other.targetValue == targetValue &&
       other.type == type &&
-      other.coinReward == coinReward;
+      other.coinReward == coinReward &&
+      other.playGamesId == playGamesId;
 
   @override
-  int get hashCode =>
-      Object.hash(id, title, description, targetValue, type, coinReward);
+  int get hashCode => Object.hash(
+      id, title, description, targetValue, type, coinReward, playGamesId);
 
   @override
   String toString() =>
