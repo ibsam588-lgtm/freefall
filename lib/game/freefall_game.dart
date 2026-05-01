@@ -11,6 +11,7 @@
 import 'package:flame/components.dart';
 import 'package:flame/game.dart';
 
+import '../components/particle_system.dart' as comp_particles;
 import '../components/player.dart';
 import '../components/zone_background.dart';
 import '../components/zone_transition.dart';
@@ -73,6 +74,11 @@ class FreefallGame extends FlameGame {
   late final Player player;
   late final ZoneBackground zoneBackground;
   late final ZoneTransition zoneTransition;
+
+  // Phase 4: dedicated death/respawn particle component. Lives in the
+  // world (above background, below player) and is driven by the player
+  // through PlayerParticleSystem.triggerDeath / triggerRespawn.
+  late final comp_particles.PlayerParticleSystem playerParticles;
 
   FreefallGame()
       : super(
@@ -146,9 +152,15 @@ class FreefallGame extends FlameGame {
     );
     await world.add(zoneBackground);
 
+    // Phase 4: particle system shares the global ParticlePool so the
+    // 60-particle death burst doesn't allocate per death.
+    playerParticles = comp_particles.PlayerParticleSystem(pool: particlePool);
+    await world.add(playerParticles);
+
     player = Player(
       gravity: gravitySystem,
       startPosition: Vector2(logicalWidth / 2, 120),
+      particleSystem: playerParticles,
     );
     await world.add(player);
 
@@ -182,6 +194,11 @@ class FreefallGame extends FlameGame {
     final viewportTopY = player.position.y - logicalHeight / 2;
     obstacleManager.pruneOffscreen(viewportTopY);
     obstacleManager.notifyPlayer(player.position);
+
+    // Phase 4: tint the player's glow with the active zone accent. Done
+    // every tick (cheap — just stashes a color) so zone-edge gradient
+    // blends and the orb's color stay in sync without a callback.
+    player.setZoneColor(zoneManager.currentZone.accentColor);
 
     super.update(clamped);
   }
