@@ -21,14 +21,17 @@ import '../components/particle_system.dart' as comp_particles;
 import '../components/player.dart';
 import '../components/zone_background.dart';
 import '../components/zone_transition.dart';
+import '../models/zone.dart';
 import '../repositories/coin_repository.dart';
 import '../repositories/stats_repository.dart';
+import '../systems/achievement_manager.dart';
 import '../systems/camera_system.dart';
 import '../systems/coin_system.dart';
 import '../systems/collectible_manager.dart';
 import '../systems/collectible_spawner.dart';
 import '../systems/collision_system.dart';
 import '../systems/difficulty_scaler.dart';
+import '../systems/ghost_runner.dart';
 import '../systems/gravity_system.dart';
 import '../systems/input_system.dart';
 import '../systems/object_pool.dart';
@@ -121,6 +124,20 @@ class FreefallGame extends FlameGame {
   /// current run. Cleared by [restartRun].
   bool _runEnded = false;
 
+  /// Phase 10: optional. When set, the game routes in-run signals
+  /// (combo, gem, zone, hit, speed gate) into the manager so unlock
+  /// popups can fire mid-run.
+  AchievementManager? achievementManager;
+
+  /// Phase 10: optional ghost runner. When set, the game records the
+  /// player's x position every fixed step and saves the run as the new
+  /// best ghost when the score beats the previous record.
+  GhostRunner? ghostRunner;
+
+  /// Elapsed run time in seconds — driven from [update]. Used by the
+  /// ghost runner for sample timestamps; reset on [restartRun].
+  double _runElapsed = 0;
+
   FreefallGame()
       : super(
           camera: CameraComponent.withFixedResolution(
@@ -146,10 +163,12 @@ class FreefallGame extends FlameGame {
     // entries via ZoneManager's callback. CameraSystem owns pumping the
     // manager each fixed step. Phase 6 chains onto the same callback
     // so a fresh zone fires both the flash AND the +500 score bonus.
+    // Phase 10 chains onto it again to feed the achievement manager.
     zoneTransition = ZoneTransition();
     zoneManager = ZoneManager(onZoneEnter: (zone) {
       zoneTransition.show(zone);
       scoreManager.onZoneComplete();
+      _emitZoneEvent(zone);
     });
     cameraSystem.zoneManager = zoneManager;
     difficultyScaler = DifficultyScaler(zoneManager: zoneManager);
@@ -263,12 +282,22 @@ class FreefallGame extends FlameGame {
     // anchored to the screen. ScoreManager pokes it via callbacks.
     comboDisplay = ComboDisplay();
     await camera.viewport.add(comboDisplay);
-    scoreManager.onComboChanged = comboDisplay.onComboIncrement;
+    scoreManager.onComboChanged = (combo) {
+      comboDisplay.onComboIncrement(combo);
+      _emitComboEvent(combo);
+    };
     scoreManager.onComboReset = comboDisplay.startFade;
 
     // Phase 6: a player hit collapses the combo. Wired via the callback
     // hook on Player so the combo reset stays in lockstep with damage.
-    player.onHitCallback = scoreManager.onPlayerHit;
+    // Phase 10 also forwards the hit to the achievement manager so
+    // no-hit-zone progress gets correctly invalidated.
+    player.onHitCallback = () {
+      scoreManager.onPlayerHit();
+      achievementManager?.onEvent(
+        const AchievementEvent(AchievementEventKind.playerHit),
+      );
+    };
 
     // Phase 5: now that player + hud both exist, wire pickup callbacks.
     // extraLife heals or pushes the cap; coins/gems bump the live HUD
@@ -292,6 +321,9 @@ class FreefallGame extends FlameGame {
       hud.sessionCoins += currency;
       coinRepository.addCoins(currency);
       scoreManager.onGemCollected(gem.value);
+      achievementManager?.onEvent(
+        const AchievementEvent(AchievementEventKind.gemCollected),
+      );
     };
 
     // The Flame camera follows the player vertically. The auto-scroll
@@ -304,6 +336,14 @@ class FreefallGame extends FlameGame {
   @override
   void update(double dt) {
     final clamped = dt > maxFrameDt ? maxFrameDt : dt;
+
+    // Phase 10: advance the run-time clock + record a ghost sample.
+    // Both gated on isAlive so a corpse doesn't keep ticking the ghost
+    // past death and make a bogus best run.
+    if (player.isAlive) {
+      _runElapsed += clamped;
+      ghostRunner?.recordSample(_runElapsed, player.position.x);
+    }
 
     // Keep CameraSystem in sync with the player's world position so
     // anything that wants "player depth" reads a fresh value.
@@ -380,7 +420,28 @@ class FreefallGame extends FlameGame {
     collectibleSpawner.reset();
     hud.sessionCoins = 0;
     _runEnded = false;
+    _runElapsed = 0;
+    achievementManager?.onRunStarted();
+    ghostRunner?.onRunStarted();
     player.respawn();
+  }
+
+  /// Forward zone-enter events to the achievement manager. Maps the
+  /// 5-zone canonical cycle to the manager's 0..4 zone-index space.
+  void _emitZoneEvent(ZoneType zone) {
+    final mgr = achievementManager;
+    if (mgr == null) return;
+    final idx = Zone.defaultCycle.indexWhere((z) => z.type == zone);
+    mgr.onEvent(
+      AchievementEvent(AchievementEventKind.zoneEntered, idx),
+    );
+  }
+
+  /// Forward combo-increment events to the achievement manager.
+  void _emitComboEvent(int combo) {
+    achievementManager?.onEvent(
+      AchievementEvent(AchievementEventKind.comboReached, combo),
+    );
   }
 
   /// Total fixed-timestep ticks since startup. Useful for tests.

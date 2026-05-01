@@ -23,7 +23,9 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../app/app_dependencies.dart';
 import '../app/app_routes.dart';
+import '../models/powerup_upgrade.dart';
 import '../repositories/coin_repository.dart';
 import '../repositories/daily_login_repository.dart';
 import '../repositories/store_repository.dart';
@@ -81,12 +83,41 @@ class _MainMenuScreenState extends State<MainMenuScreen>
       setState(() => _coinBalance = next);
     });
 
+    // Phase 10: feed the achievement manager fresh external counters
+    // every time the menu loads (post-purchase, post-claim, etc.) so
+    // unlocks like first_skin / streak_7 / maxed_upgrade fire as soon
+    // as the underlying state changes.
+    await _syncAchievementExternals();
+
     if (await widget.loginRepo.isClaimAvailable() &&
         !_loginOverlayShown &&
         mounted) {
       _loginOverlayShown = true;
       _showDailyLogin();
     }
+  }
+
+  Future<void> _syncAchievementExternals() async {
+    if (!mounted) return;
+    final mgr = AppDependencies.of(context).achievementManager;
+    final lifetime = await widget.coinRepo.getLifetimeEarned();
+    final streak = await widget.loginRepo.getConsecutiveDays();
+    final owned = await widget.storeRepo.getOwnedItems();
+    final ownsAnyPaidSkin = owned.any((id) => id.startsWith('skin:'));
+    bool anyUpgradeMaxed = false;
+    for (final upgrade in PowerupUpgrade.catalog) {
+      final level = await widget.storeRepo.getUpgradeLevelById(upgrade.id);
+      if (level >= upgrade.maxLevel) {
+        anyUpgradeMaxed = true;
+        break;
+      }
+    }
+    await mgr.syncExternals(
+      lifetimeCoins: lifetime,
+      consecutiveDays: streak,
+      firstSkinBought: ownsAnyPaidSkin,
+      anyUpgradeMaxed: anyUpgradeMaxed,
+    );
   }
 
   @override
@@ -119,8 +150,13 @@ class _MainMenuScreenState extends State<MainMenuScreen>
     setState(() => _streak = s);
   }
 
-  void _go(String routeName) {
-    Navigator.of(context).pushNamed(routeName);
+  Future<void> _go(String routeName) async {
+    await Navigator.of(context).pushNamed(routeName);
+    if (!mounted) return;
+    // Returning from store/stats/etc. — re-run the achievement
+    // external sync so unlocks like first_skin or maxed_upgrade fire
+    // immediately on the menu instead of waiting for the next launch.
+    await _syncAchievementExternals();
   }
 
   @override
@@ -253,31 +289,37 @@ class _MainMenuScreenState extends State<MainMenuScreen>
           _menuButton(
             'PLAY',
             const Color(0xFF40E0D0),
-            () => _go(AppRoutes.game),
+            () { _go(AppRoutes.game); },
           ),
           const SizedBox(height: 10),
           _menuButton(
             'STORE',
             const Color(0xFFFF9100),
-            () => _go(AppRoutes.store),
+            () { _go(AppRoutes.store); },
           ),
           const SizedBox(height: 10),
           _menuButton(
             'STATS',
             const Color(0xFFFFD700),
-            () => _go(AppRoutes.stats),
+            () { _go(AppRoutes.stats); },
           ),
           const SizedBox(height: 10),
           _menuButton(
             'SETTINGS',
             const Color(0xFF80DEEA),
-            () => _go(AppRoutes.settings),
+            () { _go(AppRoutes.settings); },
           ),
           const SizedBox(height: 10),
           _menuButton(
             'LEADERBOARD',
             const Color(0xFFB388FF),
-            () => _go(AppRoutes.leaderboard),
+            () { _go(AppRoutes.leaderboard); },
+          ),
+          const SizedBox(height: 10),
+          _menuButton(
+            'ACHIEVEMENTS',
+            const Color(0xFFF8BBD0),
+            () { _go(AppRoutes.achievements); },
           ),
         ],
       ),

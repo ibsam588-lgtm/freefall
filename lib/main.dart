@@ -23,7 +23,10 @@ import 'repositories/daily_login_repository.dart';
 import 'repositories/stats_repository.dart';
 import 'repositories/store_repository.dart';
 import 'services/ad_service.dart';
+import 'services/google_play_games_stub.dart';
 import 'services/settings_service.dart';
+import 'systems/achievement_manager.dart';
+import 'systems/ghost_runner.dart';
 
 Future<void> main() async {
   // Required before any platform-channel work (Firebase, orientation, etc.).
@@ -58,6 +61,12 @@ Future<void> main() async {
   final adRewardRepo = AdRewardRepository();
   final adService = AdService(rewardRepo: adRewardRepo, settings: settings);
 
+  final achievementManager = AchievementManager();
+  await achievementManager.load();
+  final ghostRunner = GhostRunner();
+  await ghostRunner.load();
+  const gameServices = GooglePlayGamesStub();
+
   runApp(FreefallApp(
     settings: settings,
     coinRepo: coinRepo,
@@ -66,6 +75,9 @@ Future<void> main() async {
     statsRepo: statsRepo,
     adRewardRepo: adRewardRepo,
     adService: adService,
+    achievementManager: achievementManager,
+    ghostRunner: ghostRunner,
+    gameServices: gameServices,
   ));
 }
 
@@ -77,6 +89,9 @@ class FreefallApp extends StatelessWidget {
   final StatsRepository statsRepo;
   final AdRewardRepository adRewardRepo;
   final AdService adService;
+  final AchievementManager achievementManager;
+  final GhostRunner ghostRunner;
+  final GooglePlayGamesService gameServices;
 
   const FreefallApp({
     super.key,
@@ -87,6 +102,9 @@ class FreefallApp extends StatelessWidget {
     required this.statsRepo,
     required this.adRewardRepo,
     required this.adService,
+    required this.achievementManager,
+    required this.ghostRunner,
+    required this.gameServices,
   });
 
   @override
@@ -99,6 +117,9 @@ class FreefallApp extends StatelessWidget {
       statsRepo: statsRepo,
       adRewardRepo: adRewardRepo,
       adService: adService,
+      achievementManager: achievementManager,
+      ghostRunner: ghostRunner,
+      gameServices: gameServices,
       child: MaterialApp(
         title: 'Freefall',
         debugShowCheckedModeBanner: false,

@@ -17,7 +17,10 @@ import '../repositories/daily_login_repository.dart';
 import '../repositories/stats_repository.dart';
 import '../repositories/store_repository.dart';
 import '../services/ad_service.dart';
+import '../services/google_play_games_stub.dart';
 import '../services/settings_service.dart';
+import '../systems/achievement_manager.dart';
+import '../systems/ghost_runner.dart';
 
 class AppDependencies extends InheritedWidget {
   final SettingsService settings;
@@ -27,6 +30,9 @@ class AppDependencies extends InheritedWidget {
   final StatsRepository statsRepo;
   final AdRewardRepository adRewardRepo;
   final AdService adService;
+  final AchievementManager achievementManager;
+  final GhostRunner ghostRunner;
+  final GooglePlayGamesService gameServices;
 
   const AppDependencies({
     super.key,
@@ -37,6 +43,9 @@ class AppDependencies extends InheritedWidget {
     required this.statsRepo,
     required this.adRewardRepo,
     required this.adService,
+    required this.achievementManager,
+    required this.ghostRunner,
+    required this.gameServices,
     required super.child,
   });
 
@@ -60,6 +69,9 @@ class AppDependencies extends InheritedWidget {
         storeRepo != oldWidget.storeRepo ||
         statsRepo != oldWidget.statsRepo ||
         adRewardRepo != oldWidget.adRewardRepo ||
-        adService != oldWidget.adService;
+        adService != oldWidget.adService ||
+        achievementManager != oldWidget.achievementManager ||
+        ghostRunner != oldWidget.ghostRunner ||
+        gameServices != oldWidget.gameServices;
   }
 }

@@ -19,7 +19,10 @@ import 'package:flutter/material.dart';
 
 import '../app/app_dependencies.dart';
 import '../app/app_routes.dart';
+import '../components/achievement_popup.dart';
 import '../game/freefall_game.dart';
+import '../models/achievement.dart';
+import '../systems/achievement_manager.dart';
 import 'pause_screen.dart';
 import 'run_summary_screen.dart';
 
@@ -32,9 +35,16 @@ class GameScreen extends StatefulWidget {
 
 class _GameScreenState extends State<GameScreen> {
   late final FreefallGame _game;
+  final AchievementPopupController _popupController =
+      AchievementPopupController();
 
   bool _paused = false;
   bool _showSummary = false;
+
+  /// Cached so we can re-wire achievement callbacks once dependencies
+  /// resolve in didChangeDependencies (the first build is when
+  /// AppDependencies is reachable).
+  AchievementManager? _achievementManager;
 
   @override
   void initState() {
@@ -43,6 +53,28 @@ class _GameScreenState extends State<GameScreen> {
     // Wire the run-end hook now so death triggers the summary even
     // if it lands before the first build (e.g. a debug warp-to-death).
     _game.onRunEnded = _onRunEnded;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Wire the achievement manager into the game's signal hooks once
+    // the InheritedWidget is available. didChangeDependencies fires
+    // before the first build, so the player will see popups even on
+    // their very first run.
+    final deps = AppDependencies.of(context);
+    final mgr = deps.achievementManager;
+    if (identical(mgr, _achievementManager)) return;
+    _achievementManager = mgr;
+    mgr.onAchievementUnlocked = _onAchievementUnlocked;
+    mgr.onRunStarted();
+    _game.achievementManager = mgr;
+    _game.ghostRunner = deps.ghostRunner;
+    deps.ghostRunner.onRunStarted();
+  }
+
+  void _onAchievementUnlocked(Achievement ach) {
+    _popupController.enqueue(ach);
   }
 
   // ---- pause flow ---------------------------------------------------------
@@ -93,6 +125,23 @@ class _GameScreenState extends State<GameScreen> {
     final deps = AppDependencies.of(context);
     final raw = _game.scoreManager.snapshot(isNewHighScore: false);
     final resolved = await deps.statsRepo.updateAfterRun(raw);
+    // Phase 10: feed the resolved run into the achievement manager so
+    // lifetime + best-of-run unlocks can fire from the summary screen.
+    // Persisted by syncExternals so coin/near-miss totals stay current.
+    await deps.achievementManager.updateFromRunStats(resolved, deps.statsRepo);
+    final coinBalance = await deps.coinRepo.getLifetimeEarned();
+    final streak = await deps.loginRepo.getConsecutiveDays();
+    await deps.achievementManager.syncExternals(
+      lifetimeCoins: coinBalance,
+      consecutiveDays: streak,
+    );
+    // Phase 10: persist the new best-run ghost iff the score beat the
+    // previous best. Mirror the score to Google Play Games (stub no-op).
+    await deps.ghostRunner.maybeSaveBestRun(resolved.score);
+    await deps.gameServices.submitScore(
+      leaderboardId: 'main',
+      score: resolved.score,
+    );
     if (!mounted) return;
     setState(() {
       // Stash the resolved stats so the summary widget rebuilds with
@@ -111,8 +160,15 @@ class _GameScreenState extends State<GameScreen> {
       _paused = false;
       _resolvedStats = null;
     });
+    _achievementManager?.onRunStarted();
     _game.restartRun();
     _game.resumeEngine();
+  }
+
+  @override
+  void dispose() {
+    _popupController.dispose();
+    super.dispose();
   }
 
   void _quitToMenu() {
@@ -157,6 +213,11 @@ class _GameScreenState extends State<GameScreen> {
                   _restartRun();
                 },
               ),
+            // Phase 10: achievement popup overlay rides above the
+            // game canvas but below pause/summary so unlocks stay
+            // visible mid-run and freeze in place when the game is
+            // paused.
+            AchievementPopupOverlay(controller: _popupController),
           ],
         ),
       ),

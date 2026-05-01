@@ -9,6 +9,7 @@
 
 import 'package:flutter/material.dart';
 
+import '../screens/achievements_screen.dart';
 import '../screens/game_screen.dart';
 import '../screens/leaderboard_screen.dart';
 import '../screens/main_menu_screen.dart';
@@ -24,6 +25,7 @@ class AppRoutes {
   static const String stats = '/stats';
   static const String settings = '/settings';
   static const String leaderboard = '/leaderboard';
+  static const String achievements = '/achievements';
 
   /// Hook for `MaterialApp.onGenerateRoute`. Returns null for unknown
   /// names so the framework's own `onUnknownRoute` can take over.
@@ -74,6 +76,12 @@ class AppRoutes {
       leaderboard => MaterialPageRoute<void>(
           settings: settings,
           builder: (_) => const LeaderboardScreen(),
+        ),
+      achievements => MaterialPageRoute<void>(
+          settings: settings,
+          builder: (ctx) => AchievementsScreen(
+            achievementManager: AppDependencies.of(ctx).achievementManager,
+          ),
         ),
       _ => null,
     };
