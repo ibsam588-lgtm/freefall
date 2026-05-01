@@ -18,12 +18,15 @@ import '../repositories/stats_repository.dart';
 import '../repositories/store_repository.dart';
 import '../services/ad_service.dart';
 import '../services/audio_service.dart';
+import '../services/analytics_service.dart';
+import '../services/crashlytics_service.dart';
 import '../services/google_play_games_stub.dart';
 import '../services/iap_service.dart';
 import '../services/settings_service.dart';
 import '../services/share_service.dart';
 import '../systems/achievement_manager.dart';
 import '../systems/ghost_runner.dart';
+import '../systems/performance_monitor.dart';
 
 class AppDependencies extends InheritedWidget {
   final SettingsService settings;
@@ -39,6 +42,9 @@ class AppDependencies extends InheritedWidget {
   final AudioService audioService;
   final IapService iapService;
   final ShareService shareService;
+  final AnalyticsService analytics;
+  final CrashlyticsService crashlytics;
+  final PerformanceMonitor performanceMonitor;
 
   const AppDependencies({
     super.key,
@@ -55,6 +61,9 @@ class AppDependencies extends InheritedWidget {
     required this.audioService,
     required this.iapService,
     required this.shareService,
+    required this.analytics,
+    required this.crashlytics,
+    required this.performanceMonitor,
     required super.child,
   });
 
@@ -84,6 +93,9 @@ class AppDependencies extends InheritedWidget {
         gameServices != oldWidget.gameServices ||
         audioService != oldWidget.audioService ||
         iapService != oldWidget.iapService ||
-        shareService != oldWidget.shareService;
+        shareService != oldWidget.shareService ||
+        analytics != oldWidget.analytics ||
+        crashlytics != oldWidget.crashlytics ||
+        performanceMonitor != oldWidget.performanceMonitor;
   }
 }

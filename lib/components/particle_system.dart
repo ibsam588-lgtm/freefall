@@ -17,6 +17,7 @@ import 'package:flutter/material.dart';
 
 import '../components/particle.dart';
 import '../systems/object_pool.dart';
+import '../systems/performance_monitor.dart';
 
 /// What the particles are currently doing. Idle == nothing to draw.
 enum ParticleMode { idle, death, respawn }
@@ -53,8 +54,22 @@ class PlayerParticleSystem extends Component {
   ParticleMode _mode = ParticleMode.idle;
   final math.Random _rng = math.Random();
 
-  PlayerParticleSystem({ParticlePool? pool})
-      : _pool = pool ?? ParticlePool(initialSize: particleCount);
+  /// Phase 14: optional perf monitor. When wired, [_budget] reads the
+  /// current particle cap so a struggling device gets the trimmed
+  /// 30/15-particle bursts instead of the full 60.
+  PerformanceMonitor? performanceMonitor;
+
+  PlayerParticleSystem({
+    ParticlePool? pool,
+    this.performanceMonitor,
+  }) : _pool = pool ?? ParticlePool(initialSize: particleCount);
+
+  /// Effective burst budget for this device's perf tier. Caps at the
+  /// particleCount the system was sized for; never exceeds it.
+  int get _budget {
+    final cap = performanceMonitor?.maxParticles ?? particleCount;
+    return cap < particleCount ? cap : particleCount;
+  }
 
   ParticleMode get mode => _mode;
   int get activeCount => _active.length;
@@ -66,7 +81,8 @@ class PlayerParticleSystem extends Component {
     _releaseAll();
     _mode = ParticleMode.death;
 
-    for (int i = 0; i < particleCount; i++) {
+    final count = _budget;
+    for (int i = 0; i < count; i++) {
       final p = _pool.acquire();
       final angle = _rng.nextDouble() * math.pi * 2;
       final speed = deathMinSpeed +
@@ -91,7 +107,8 @@ class PlayerParticleSystem extends Component {
     _respawnElapsed = 0;
     _respawnStarts.clear();
 
-    for (int i = 0; i < particleCount; i++) {
+    final count = _budget;
+    for (int i = 0; i < count; i++) {
       final p = _pool.acquire();
       final angle = _rng.nextDouble() * math.pi * 2;
       // Scatter on a ring 80–160 px out from the target.

@@ -38,6 +38,7 @@ import '../models/achievement.dart';
 import '../models/run_stats.dart';
 import '../repositories/daily_login_repository.dart';
 import '../repositories/stats_repository.dart';
+import '../services/analytics_service.dart';
 import '../services/google_play_games_stub.dart';
 
 /// Discriminator for in-run events fed into [AchievementManager.onEvent].
@@ -297,9 +298,14 @@ class AchievementManager {
   /// gracefully no-ops, which lets unit tests skip the platform layer.
   GooglePlayGamesService? gameServices;
 
+  /// Phase 14: optional analytics mirror. Logs `achievement_unlocked`
+  /// with the row's stable id every time we flip a fresh row.
+  AnalyticsService? analytics;
+
   AchievementManager({
     LoginStorage? storage,
     this.gameServices,
+    this.analytics,
   }) : storage = storage ?? SharedPreferencesLoginStorage();
 
   /// Fired the first frame [id] flips from locked to unlocked. The host
@@ -607,6 +613,7 @@ class AchievementManager {
     await storage.setString(_unlockedKey, _unlocked.join(_delim));
     final cb = onAchievementUnlocked;
     final services = gameServices;
+    final analyticsSvc = analytics;
     for (final ach in newlyUnlocked) {
       cb?.call(ach);
       // Phase 13: mirror to Play Games / Game Center. Fire-and-forget;
@@ -614,6 +621,10 @@ class AchievementManager {
       final pgId = ach.playGamesId;
       if (services != null && pgId != null) {
         unawaited(services.unlockAchievement(pgId));
+      }
+      // Phase 14: log to analytics. Same fire-and-forget pattern.
+      if (analyticsSvc != null) {
+        unawaited(analyticsSvc.logAchievementUnlocked(ach.id));
       }
     }
   }

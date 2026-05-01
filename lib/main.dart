@@ -12,8 +12,6 @@
 
 import 'dart:async';
 
-import 'package:firebase_core/firebase_core.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -26,8 +24,11 @@ import 'repositories/stats_repository.dart';
 import 'repositories/store_repository.dart';
 import 'services/ad_service.dart';
 import 'services/admob_service.dart';
+import 'services/analytics_service.dart';
 import 'services/audio_service.dart';
 import 'services/audio_service_impl.dart';
+import 'services/crashlytics_service.dart';
+import 'services/firebase_service.dart';
 import 'services/google_play_games_service.dart';
 import 'services/google_play_games_stub.dart';
 import 'services/iap_service.dart';
@@ -35,6 +36,7 @@ import 'services/settings_service.dart';
 import 'services/share_service.dart';
 import 'systems/achievement_manager.dart';
 import 'systems/ghost_runner.dart';
+import 'systems/performance_monitor.dart';
 
 Future<void> main() async {
   // Required before any platform-channel work (Firebase, orientation, etc.).
@@ -44,17 +46,13 @@ Future<void> main() async {
     DeviceOrientation.portraitUp,
   ]);
 
-  // WHY: try/catch — Firebase needs platform config files (google-services.json
-  // on Android, GoogleService-Info.plist on iOS). Phase 1 ships without them
-  // so devs can `flutter run` immediately; analytics/crashlytics get wired in
-  // once provisioning happens.
-  try {
-    await Firebase.initializeApp();
-  } catch (e, st) {
-    if (kDebugMode) {
-      debugPrint('Firebase init skipped (no config?): $e\n$st');
-    }
-  }
+  // Phase 14: Firebase bootstrap. Returns null-backed Analytics +
+  // Crashlytics on a fresh checkout (missing google-services.json),
+  // and the real Firebase-backed services once provisioning lands.
+  // See android/SETUP.md for the file the platform expects.
+  final firebase = await FirebaseService.initialize();
+  final AnalyticsService analytics = firebase.analytics;
+  final CrashlyticsService crashlytics = firebase.crashlytics;
 
   // Phase 7+8+9: prefetch user prefs and build the persistent stores.
   // Each repo caches its own SharedPreferences/secure-storage future
@@ -101,6 +99,7 @@ Future<void> main() async {
   final shareService = ShareService();
   final achievementManager = AchievementManager(
     gameServices: gameServices,
+    analytics: analytics,
   );
   await achievementManager.load();
 
@@ -111,6 +110,12 @@ Future<void> main() async {
     soundEnabled: settings.soundEnabled,
     musicEnabled: settings.musicEnabled,
   );
+
+  // Phase 14: rolling-frame perf monitor. Owned at app scope so the
+  // running game can read it from update() and gameplay components
+  // can poll it from render() without threading it through every
+  // constructor.
+  final performanceMonitor = PerformanceMonitor();
 
   runApp(FreefallApp(
     settings: settings,
@@ -126,6 +131,9 @@ Future<void> main() async {
     audioService: audioService,
     iapService: iapService,
     shareService: shareService,
+    analytics: analytics,
+    crashlytics: crashlytics,
+    performanceMonitor: performanceMonitor,
   ));
 }
 
@@ -143,6 +151,9 @@ class FreefallApp extends StatelessWidget {
   final AudioService audioService;
   final IapService iapService;
   final ShareService shareService;
+  final AnalyticsService analytics;
+  final CrashlyticsService crashlytics;
+  final PerformanceMonitor performanceMonitor;
 
   const FreefallApp({
     super.key,
@@ -159,6 +170,9 @@ class FreefallApp extends StatelessWidget {
     required this.audioService,
     required this.iapService,
     required this.shareService,
+    required this.analytics,
+    required this.crashlytics,
+    required this.performanceMonitor,
   });
 
   @override
@@ -177,6 +191,9 @@ class FreefallApp extends StatelessWidget {
       audioService: audioService,
       iapService: iapService,
       shareService: shareService,
+      analytics: analytics,
+      crashlytics: crashlytics,
+      performanceMonitor: performanceMonitor,
       child: MaterialApp(
         title: 'Freefall',
         debugShowCheckedModeBanner: false,

@@ -78,6 +78,11 @@ class _GameScreenState extends State<GameScreen> {
     _game.achievementManager = mgr;
     _game.ghostRunner = deps.ghostRunner;
     _game.audio = deps.audioService;
+    // Phase 14: hand the shared monitor to the game so frame dts and
+    // the visual budgets stay in sync across runs (the monitor is
+    // app-scoped so a slow first-run keeps adapting on the second).
+    _game.performanceMonitor = deps.performanceMonitor;
+    _game.analytics = deps.analytics;
     // Mirror the latest settings into the audio service so a player
     // who muted between runs doesn't hear the next session.
     deps.audioService.syncFromSettings(deps.settings);
@@ -178,6 +183,10 @@ class _GameScreenState extends State<GameScreen> {
     // the every-3rd-game-over pacing + the no-ads short-circuit, so
     // the call site stays a one-liner.
     await deps.adService.showInterstitialAd();
+    // Phase 14: log the resolved run to analytics. Fire-and-forget;
+    // the no-op base service swallows the call when Firebase isn't
+    // booted.
+    await deps.analytics.logRunCompleted(resolved);
     if (!mounted) return;
     setState(() {
       // Stash the resolved stats so the summary widget rebuilds with

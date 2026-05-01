@@ -24,9 +24,11 @@ import '../components/zone_transition.dart';
 import '../models/zone.dart';
 import '../repositories/coin_repository.dart';
 import '../repositories/stats_repository.dart';
+import '../services/analytics_service.dart';
 import '../services/audio_service.dart';
 import '../systems/achievement_manager.dart';
 import '../systems/camera_system.dart';
+import '../systems/performance_monitor.dart';
 import '../systems/coin_system.dart';
 import '../systems/collectible_manager.dart';
 import '../systems/collectible_spawner.dart';
@@ -140,6 +142,16 @@ class FreefallGame extends FlameGame {
   /// [AudioService] so the game runs without one wired up.
   AudioService audio = AudioService();
 
+  /// Phase 14: optional perf monitor. When set, the game feeds
+  /// per-frame dts into it (after clamping) and downstream visual
+  /// components (ZoneBackground, PlayerParticleSystem) read its
+  /// `maxParticles` / `backgroundLayers` budgets each frame.
+  PerformanceMonitor? performanceMonitor;
+
+  /// Phase 14: optional analytics. When set, the game logs
+  /// `zone_reached` events on each zone crossing.
+  AnalyticsService? analytics;
+
   /// Elapsed run time in seconds — driven from [update]. Used by the
   /// ghost runner for sample timestamps; reset on [restartRun].
   double _runElapsed = 0;
@@ -186,6 +198,9 @@ class FreefallGame extends FlameGame {
       // dedup inside AudioService so a no-op rebuild stays silent.
       audio.playZoneMusic(zone);
       audio.playZoneTransition();
+      // Phase 14: log to analytics. The fire-and-forget call no-ops
+      // when the analytics backend is the null impl.
+      analytics?.logZoneReached(zone);
     });
     cameraSystem.zoneManager = zoneManager;
     difficultyScaler = DifficultyScaler(zoneManager: zoneManager);
@@ -261,12 +276,18 @@ class FreefallGame extends FlameGame {
     zoneBackground = ZoneBackground(
       zoneManager: zoneManager,
       cameraSystem: cameraSystem,
+      performanceMonitor: performanceMonitor,
     );
     await world.add(zoneBackground);
 
     // Phase 4: particle system shares the global ParticlePool so the
-    // 60-particle death burst doesn't allocate per death.
-    playerParticles = comp_particles.PlayerParticleSystem(pool: particlePool);
+    // 60-particle death burst doesn't allocate per death. Phase 14
+    // feeds it the perf monitor so a struggling device gets a 30/15
+    // particle burst instead of the full 60.
+    playerParticles = comp_particles.PlayerParticleSystem(
+      pool: particlePool,
+      performanceMonitor: performanceMonitor,
+    );
     await world.add(playerParticles);
 
     player = Player(
@@ -359,6 +380,11 @@ class FreefallGame extends FlameGame {
   @override
   void update(double dt) {
     final clamped = dt > maxFrameDt ? maxFrameDt : dt;
+
+    // Phase 14: feed the post-clamp dt into the perf monitor so the
+    // rolling average tracks actual frame pacing (not the GC-pause
+    // tail we already chopped off via maxFrameDt).
+    performanceMonitor?.recordFrame(clamped);
 
     // Phase 10: advance the run-time clock + record a ghost sample.
     // Both gated on isAlive so a corpse doesn't keep ticking the ghost

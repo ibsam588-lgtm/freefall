@@ -22,6 +22,7 @@ import 'package:flutter/material.dart';
 import '../game/freefall_game.dart';
 import '../models/zone.dart';
 import '../systems/camera_system.dart';
+import '../systems/performance_monitor.dart';
 import '../systems/zone_manager.dart';
 
 /// Single ambient particle (cloud puff, ember, bubble, etc). Reused
@@ -50,6 +51,13 @@ class ZoneBackground extends PositionComponent {
   final ZoneManager zoneManager;
   final CameraSystem cameraSystem;
 
+  /// Phase 14: optional perf monitor. When wired:
+  ///   * `monitor.maxParticles` caps how many ambient particles step
+  ///     and render each frame (cheaper fillrate on low tier),
+  ///   * `monitor.backgroundLayers` decides whether to render the far
+  ///     parallax layer (drops out at the lowest tier).
+  PerformanceMonitor? performanceMonitor;
+
   final math.Random _rng = math.Random(42);
   final List<_Particle> _particles =
       List.generate(_particleCount, (_) => _Particle());
@@ -65,6 +73,7 @@ class ZoneBackground extends PositionComponent {
   ZoneBackground({
     required this.zoneManager,
     required this.cameraSystem,
+    this.performanceMonitor,
   }) : super(
           // Sit far behind everything else in the world.
           priority: -1000,
@@ -145,9 +154,19 @@ class ZoneBackground extends PositionComponent {
     }
   }
 
+  /// How many ambient particles to step + render this frame. Caps at
+  /// the static pool size; reads the perf-monitor cap when wired.
+  int get _ambientParticleBudget {
+    final cap = performanceMonitor?.maxParticles;
+    if (cap == null) return _particleCount;
+    return cap < _particleCount ? cap : _particleCount;
+  }
+
   void _stepParticles(double dt) {
     final zone = zoneManager.currentZone.type;
-    for (final p in _particles) {
+    final budget = _ambientParticleBudget;
+    for (int i = 0; i < budget; i++) {
+      final p = _particles[i];
       p.x += p.drift * dt;
       // p.rise is the apparent screen-space vertical motion: negative =
       // moves down (clouds, dust), positive = moves up (bubbles, embers).
@@ -171,8 +190,13 @@ class ZoneBackground extends PositionComponent {
   @override
   void render(Canvas canvas) {
     _renderGradient(canvas);
-    _renderFarLayer(canvas);
-    _renderNearLayer(canvas);
+    // Phase 14: respect the perf-monitor's parallax-layer budget.
+    //   2 layers → far + near (default high-tier behavior),
+    //   1 layer  → near only,
+    //   0 layers → gradient + ambient particles only.
+    final layers = performanceMonitor?.backgroundLayers ?? 2;
+    if (layers >= 2) _renderFarLayer(canvas);
+    if (layers >= 1) _renderNearLayer(canvas);
     _renderParticles(canvas);
   }
 
@@ -411,7 +435,9 @@ class ZoneBackground extends PositionComponent {
   void _renderParticles(Canvas canvas) {
     final zone = zoneManager.currentZone.type;
     final accent = zoneManager.currentZone.accentColor;
-    for (final p in _particles) {
+    final budget = _ambientParticleBudget;
+    for (int i = 0; i < budget; i++) {
+      final p = _particles[i];
       switch (zone) {
         case ZoneType.stratosphere:
           _renderCloudParticle(canvas, p);
