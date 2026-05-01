@@ -10,6 +10,8 @@
 // to descendant screens via [AppDependencies] so route handlers don't
 // have to thread typed args through RouteSettings.
 
+import 'dart:async';
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -23,9 +25,11 @@ import 'repositories/daily_login_repository.dart';
 import 'repositories/stats_repository.dart';
 import 'repositories/store_repository.dart';
 import 'services/ad_service.dart';
+import 'services/admob_service.dart';
 import 'services/audio_service.dart';
 import 'services/audio_service_impl.dart';
 import 'services/google_play_games_stub.dart';
+import 'services/iap_service.dart';
 import 'services/settings_service.dart';
 import 'systems/achievement_manager.dart';
 import 'systems/ghost_runner.dart';
@@ -61,7 +65,28 @@ Future<void> main() async {
   final storeRepo = StoreRepository(coinRepo: coinRepo);
   final statsRepo = StatsRepository();
   final adRewardRepo = AdRewardRepository();
-  final adService = AdService(rewardRepo: adRewardRepo, settings: settings);
+  // Phase 12: real AdMob backend (rewarded + interstitial preload).
+  // Defensive — every google_mobile_ads call is wrapped in try/catch
+  // inside the service so a missing native plugin doesn't crash boot.
+  final AdService adService = AdmobService(
+    rewardRepo: adRewardRepo,
+    settings: settings,
+  );
+  if (adService is AdmobService) {
+    // Fire and forget — load up the first rewarded + interstitial in
+    // the background so the first show feels instant.
+    unawaited(adService.loadAds());
+  }
+
+  // Phase 12: in-app purchase facade. init() subscribes to the
+  // platform purchase stream + queries product details. Defensive
+  // internals — works even when no platform plugin is registered.
+  final iapService = IapService(
+    coinRepo: coinRepo,
+    storeRepo: storeRepo,
+    settings: settings,
+  );
+  unawaited(iapService.init());
 
   final achievementManager = AchievementManager();
   await achievementManager.load();
@@ -89,6 +114,7 @@ Future<void> main() async {
     ghostRunner: ghostRunner,
     gameServices: gameServices,
     audioService: audioService,
+    iapService: iapService,
   ));
 }
 
@@ -104,6 +130,7 @@ class FreefallApp extends StatelessWidget {
   final GhostRunner ghostRunner;
   final GooglePlayGamesService gameServices;
   final AudioService audioService;
+  final IapService iapService;
 
   const FreefallApp({
     super.key,
@@ -118,6 +145,7 @@ class FreefallApp extends StatelessWidget {
     required this.ghostRunner,
     required this.gameServices,
     required this.audioService,
+    required this.iapService,
   });
 
   @override
@@ -134,6 +162,7 @@ class FreefallApp extends StatelessWidget {
       ghostRunner: ghostRunner,
       gameServices: gameServices,
       audioService: audioService,
+      iapService: iapService,
       child: MaterialApp(
         title: 'Freefall',
         debugShowCheckedModeBanner: false,

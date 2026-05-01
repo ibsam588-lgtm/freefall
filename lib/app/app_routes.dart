@@ -54,6 +54,7 @@ class AppRoutes {
             return StoreScreen(
               coinRepo: deps.coinRepo,
               storeRepo: deps.storeRepo,
+              iapService: deps.iapService,
             );
           },
         ),

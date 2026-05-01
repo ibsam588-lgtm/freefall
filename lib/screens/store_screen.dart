@@ -21,21 +21,29 @@ import 'package:flutter/material.dart';
 
 import '../components/store_item_preview.dart';
 import '../models/death_effect.dart';
+import '../models/iap_product.dart';
 import '../models/powerup_upgrade.dart';
 import '../models/shield_skin.dart';
 import '../models/trail_effect.dart';
 import '../repositories/coin_repository.dart';
 import '../repositories/store_repository.dart';
+import '../services/iap_service.dart';
 import '../store/store_inventory.dart';
 
 class StoreScreen extends StatefulWidget {
   final CoinRepository coinRepo;
   final StoreRepository storeRepo;
 
+  /// Phase 12: optional IAP backend. When wired, the Coin Packs tab
+  /// shows real products and triggers the platform purchase flow.
+  /// When null, the tab degrades to the Phase-8 stub experience.
+  final IapService? iapService;
+
   const StoreScreen({
     super.key,
     required this.coinRepo,
     required this.storeRepo,
+    this.iapService,
   });
 
   @override
@@ -55,6 +63,10 @@ class _StoreScreenState extends State<StoreScreen>
   String _equippedShield = '';
   String _equippedDeath = '';
   Map<PowerupUpgradeId, int> _upgradeLevels = const {};
+
+  /// Phase 12: which IAP id is currently mid-purchase (loading
+  /// spinner). Null when nothing is in flight.
+  String? _purchasingId;
 
   static const _tabs = <_StoreTabSpec>[
     _StoreTabSpec(StoreCategory.skins, 'Skins'),
@@ -468,43 +480,205 @@ class _StoreScreenState extends State<StoreScreen>
   }
 
   Widget _buildCoinPacksTab() {
-    const packs = [
-      _CoinPackStub('Small Pack', '1,000 coins', '\$0.99'),
-      _CoinPackStub('Medium Pack', '5,500 coins', '\$4.99'),
-      _CoinPackStub('Large Pack', '12,000 coins', '\$9.99'),
-      _CoinPackStub('Mega Pack', '30,000 coins', '\$19.99'),
-    ];
+    final iap = widget.iapService;
+    if (iap == null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            'In-app purchases unavailable on this build.',
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.8)),
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
     return ListView.separated(
       padding: const EdgeInsets.all(16),
-      itemCount: packs.length,
+      itemCount: iap.catalog.length + 1,
       separatorBuilder: (_, __) => const SizedBox(height: 12),
       itemBuilder: (_, i) {
-        final p = packs[i];
-        return _CardShell(
-          child: ListTile(
-            title: Text(
-              p.title,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            subtitle: Text(
-              p.subtitle,
-              style: const TextStyle(color: Color(0xFFFFD700)),
-            ),
-            trailing: FilledButton(
-              onPressed: () => _showSnack('Coin packs coming in Phase 12'),
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFFFFD700),
-                foregroundColor: const Color(0xFF101018),
-              ),
-              child: Text(p.price),
-            ),
-          ),
-        );
+        if (i == iap.catalog.length) {
+          return _buildRestoreButton(iap);
+        }
+        final product = iap.catalog[i];
+        return _buildIapCard(iap, product);
       },
     );
+  }
+
+  Widget _buildIapCard(IapService iap, IapProduct product) {
+    final isPurchasing = _purchasingId == product.id;
+    final price = iap.priceFor(product.id);
+    return _CardShell(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: product.removesAds
+                    ? const Color(0xFFB388FF)
+                    : const Color(0xFFFFD700),
+              ),
+              child: Icon(
+                product.skinUnlock != null
+                    ? Icons.workspace_premium
+                    : product.removesAds
+                        ? Icons.block
+                        : Icons.monetization_on,
+                color: const Color(0xFF101018),
+                size: 22,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    product.title,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    product.description,
+                    style: const TextStyle(
+                      color: Color(0xFFCFCFD8),
+                      fontSize: 12,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            SizedBox(
+              width: 92,
+              child: FilledButton(
+                onPressed: isPurchasing
+                    ? null
+                    : () => _onPurchaseTapped(iap, product),
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFFFFD700),
+                  foregroundColor: const Color(0xFF101018),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
+                child: isPurchasing
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Color(0xFF101018),
+                        ),
+                      )
+                    : Text(
+                        price,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRestoreButton(IapService iap) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: TextButton.icon(
+        onPressed: () => _onRestoreTapped(iap),
+        icon: const Icon(Icons.restore, color: Color(0xFF80DEEA)),
+        label: const Text(
+          'RESTORE PURCHASES',
+          style: TextStyle(
+            color: Color(0xFF80DEEA),
+            fontSize: 12,
+            letterSpacing: 2,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _onPurchaseTapped(IapService iap, IapProduct product) async {
+    setState(() => _purchasingId = product.id);
+    // We register a one-shot listener so the snackbar fires for THIS
+    // purchase only — long-running purchases (pending → purchased)
+    // can resolve well after the buy() future does, and we want the
+    // user-facing message tied to their tap.
+    void onPurchase(IapProduct credited, IapCreditResult result) {
+      if (!mounted || credited.id != product.id) return;
+      _showSnack(_resultMessage(credited, result));
+      _refreshOwnedAndBalance();
+      iap.onPurchase = null;
+      setState(() => _purchasingId = null);
+    }
+
+    void onError(String msg) {
+      if (!mounted || _purchasingId != product.id) return;
+      _showSnack('Purchase failed: $msg');
+      iap.onPurchaseError = null;
+      iap.onPurchase = null;
+      setState(() => _purchasingId = null);
+    }
+
+    iap.onPurchase = onPurchase;
+    iap.onPurchaseError = onError;
+
+    final accepted = await iap.purchase(product.id);
+    if (!accepted && mounted) {
+      _showSnack('Purchase unavailable');
+      iap.onPurchase = null;
+      iap.onPurchaseError = null;
+      setState(() => _purchasingId = null);
+    }
+  }
+
+  Future<void> _onRestoreTapped(IapService iap) async {
+    _showSnack('Restoring purchases…');
+    iap.onPurchase = (product, result) {
+      if (!mounted) return;
+      if (result.didAnything) {
+        _showSnack('${product.title} restored');
+      }
+      _refreshOwnedAndBalance();
+    };
+    await iap.restorePurchases();
+  }
+
+  Future<void> _refreshOwnedAndBalance() async {
+    final owned = await widget.storeRepo.getOwnedItems();
+    if (!mounted) return;
+    setState(() {
+      _owned = owned;
+    });
+  }
+
+  String _resultMessage(IapProduct product, IapCreditResult result) {
+    final parts = <String>[];
+    if (result.coinsCredited > 0) {
+      parts.add('+${result.coinsCredited} coins');
+    }
+    if (result.noAdsActivated) parts.add('ads removed');
+    if (result.skinUnlocked) parts.add('${product.title} skin unlocked');
+    if (parts.isEmpty) return '${product.title} restored';
+    return '${product.title}: ${parts.join(', ')}';
   }
 
   Widget _cardButton(
@@ -579,13 +753,6 @@ class _StoreTabSpec {
   final StoreCategory category;
   final String label;
   const _StoreTabSpec(this.category, this.label);
-}
-
-class _CoinPackStub {
-  final String title;
-  final String subtitle;
-  final String price;
-  const _CoinPackStub(this.title, this.subtitle, this.price);
 }
 
 class _CardShell extends StatelessWidget {

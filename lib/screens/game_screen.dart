@@ -153,6 +153,10 @@ class _GameScreenState extends State<GameScreen> {
     if (resolved.isNewHighScore) {
       deps.audioService.playNewHighScore();
     }
+    // Phase 12: poke the interstitial counter. The service handles
+    // the every-3rd-game-over pacing + the no-ads short-circuit, so
+    // the call site stays a one-liner.
+    await deps.adService.showInterstitialAd();
     if (!mounted) return;
     setState(() {
       // Stash the resolved stats so the summary widget rebuilds with
