@@ -8,15 +8,21 @@
 // Every gameplay constant is authored against this — Flame's
 // CameraComponent.withFixedResolution scales to fit the device.
 
+import 'dart:ui';
+
 import 'package:flame/components.dart';
 import 'package:flame/game.dart';
 
+import '../components/combo_display.dart';
+import '../components/floating_text.dart';
 import '../components/hud.dart';
+import '../components/near_miss_detector.dart';
 import '../components/particle_system.dart' as comp_particles;
 import '../components/player.dart';
 import '../components/zone_background.dart';
 import '../components/zone_transition.dart';
 import '../repositories/coin_repository.dart';
+import '../repositories/stats_repository.dart';
 import '../systems/camera_system.dart';
 import '../systems/coin_system.dart';
 import '../systems/collectible_manager.dart';
@@ -32,6 +38,7 @@ import '../systems/obstacle_system.dart';
 import '../systems/particle_system.dart';
 import '../systems/player_system.dart';
 import '../systems/powerup_manager.dart';
+import '../systems/score_manager.dart';
 import '../systems/zone_manager.dart';
 import 'game_loop.dart';
 
@@ -95,6 +102,15 @@ class FreefallGame extends FlameGame {
   late final CoinRepository coinRepository;
   late final GameHud hud;
 
+  // Phase 6: scoring + combo. ScoreManager is on the fixed-step bus
+  // (combo timeout decay); NearMissDetector runs from the host with
+  // the freshest player rect; StatsRepository persists lifetime
+  // counters across runs.
+  late final ScoreManager scoreManager;
+  late final NearMissDetector nearMissDetector;
+  late final ComboDisplay comboDisplay;
+  late final StatsRepository statsRepository;
+
   FreefallGame()
       : super(
           camera: CameraComponent.withFixedResolution(
@@ -118,9 +134,13 @@ class FreefallGame extends FlameGame {
 
     // Phase 2: zone state. The transition overlay listens for zone
     // entries via ZoneManager's callback. CameraSystem owns pumping the
-    // manager each fixed step.
+    // manager each fixed step. Phase 6 chains onto the same callback
+    // so a fresh zone fires both the flash AND the +500 score bonus.
     zoneTransition = ZoneTransition();
-    zoneManager = ZoneManager(onZoneEnter: zoneTransition.show);
+    zoneManager = ZoneManager(onZoneEnter: (zone) {
+      zoneTransition.show(zone);
+      scoreManager.onZoneComplete();
+    });
     cameraSystem.zoneManager = zoneManager;
     difficultyScaler = DifficultyScaler(zoneManager: zoneManager);
 
@@ -158,6 +178,13 @@ class FreefallGame extends FlameGame {
     );
     coinRepository = CoinRepository();
 
+    // Phase 6: scoring + combo. ScoreManager reads the powerup
+    // multiplier; NearMissDetector is a plain helper, no per-tick
+    // bookkeeping of its own (the host pumps it).
+    scoreManager = ScoreManager(powerupManager: powerupManager);
+    nearMissDetector = NearMissDetector();
+    statsRepository = StatsRepository();
+
     gameLoop = GameLoop.standard(
       input: inputSystem,
       gravity: gravitySystem,
@@ -177,6 +204,10 @@ class FreefallGame extends FlameGame {
     gameLoop.register(powerupManager);
     gameLoop.register(collectibleSpawner);
     gameLoop.register(collectibleManager);
+    // Score manager ticks last in the registry so it sees a settled
+    // world (combo timer drains here; depth points are added from the
+    // host after the camera has advanced).
+    gameLoop.register(scoreManager);
 
     // Background goes into the world *before* the player so it sits at
     // the bottom of the draw order. The component reads from
@@ -211,21 +242,39 @@ class FreefallGame extends FlameGame {
     );
     await camera.viewport.add(hud);
 
+    // Phase 6: combo display sits in the same viewport so it stays
+    // anchored to the screen. ScoreManager pokes it via callbacks.
+    comboDisplay = ComboDisplay();
+    await camera.viewport.add(comboDisplay);
+    scoreManager.onComboChanged = comboDisplay.onComboIncrement;
+    scoreManager.onComboReset = comboDisplay.startFade;
+
+    // Phase 6: a player hit collapses the combo. Wired via the callback
+    // hook on Player so the combo reset stays in lockstep with damage.
+    player.onHitCallback = scoreManager.onPlayerHit;
+
     // Phase 5: now that player + hud both exist, wire pickup callbacks.
     // extraLife heals or pushes the cap; coins/gems bump the live HUD
-    // counter and queue an async persistence write.
+    // counter and queue an async persistence write. ScoreManager
+    // tallies on top so the run summary reads correctly.
     powerupManager.onExtraLife = player.gainLife;
     collectibleManager.onCoinCollected = (coin) {
-      final mult = powerupManager.coinMultiplier;
-      final value = (coin.value * mult).round();
+      // Combo amplifies the currency value (coin tier × combo coin mult).
+      final coinMult =
+          powerupManager.coinMultiplier * scoreManager.currentCoinMultiplier;
+      final value = (coin.value * coinMult).round();
       hud.sessionCoins += value;
       coinRepository.addCoins(value);
+      scoreManager.onCoinCollected();
     };
     collectibleManager.onGemCollected = (gem) {
-      final mult = powerupManager.scoreMultiplier;
-      final value = (gem.value * mult).round();
-      hud.sessionCoins += value;
-      coinRepository.addCoins(value);
+      // Gems award currency AND score; ScoreManager handles the score
+      // side so combo + powerup multipliers compose in one place.
+      final coinMult = powerupManager.coinMultiplier;
+      final currency = (gem.value * coinMult).round();
+      hud.sessionCoins += currency;
+      coinRepository.addCoins(currency);
+      scoreManager.onGemCollected(gem.value);
     };
 
     // The Flame camera follows the player vertically. The auto-scroll
@@ -262,6 +311,26 @@ class FreefallGame extends FlameGame {
     collectibleManager.runPickupPass(player.position, clamped);
     collectibleManager.pruneOffscreen(viewportTopY);
 
+    // Phase 6: bill the player's depth into the score (delta-based,
+    // so the score is monotonic and never refunds), then run a near-
+    // miss pass against the live obstacle set. Each fresh near-miss
+    // becomes a +50 score bonus and a floating "CLOSE!" popup.
+    scoreManager.onDepthTick(cameraSystem.currentDepthMeters);
+    final hits = nearMissDetector.detect(
+      _playerHitbox(),
+      obstacleManager.activeObstacles,
+      clamped,
+    );
+    for (final o in hits) {
+      scoreManager.onNearMiss();
+      world.add(FloatingText(
+        text: 'CLOSE! +${ScoreManager.nearMissBonus}',
+        worldPosition: o.position.clone(),
+        color: const Color(0xFFFFD600),
+        fontSize: 13,
+      ));
+    }
+
     // Phase 4: tint the player's glow with the active zone accent. Done
     // every tick (cheap — just stashes a color) so zone-edge gradient
     // blends and the orb's color stay in sync without a callback.
@@ -272,4 +341,17 @@ class FreefallGame extends FlameGame {
 
   /// Total fixed-timestep ticks since startup. Useful for tests.
   int get totalSimSteps => gameLoop.totalSteps;
+
+  /// World-space AABB of the player orb. Recomputed each frame; used
+  /// by Phase-6 near-miss detection. Anchored at the player's center
+  /// (Player.anchor == Anchor.center), so we offset by the radius.
+  Rect _playerHitbox() {
+    const r = Player.radius;
+    return Rect.fromLTWH(
+      player.position.x - r,
+      player.position.y - r,
+      r * 2,
+      r * 2,
+    );
+  }
 }

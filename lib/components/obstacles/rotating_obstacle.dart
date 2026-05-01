@@ -39,11 +39,15 @@ class RotatingObstacle extends GameObstacle {
                 ((rng ?? math.Random()).nextInt(maxArms - minArms + 1) +
                     minArms))
             .clamp(minArms, maxArms),
-        angularSpeed = (angularSpeed ??
-                (minAngularSpeed +
+        // Random sign flip only applies when no explicit speed was
+        // given. WHY: a caller passing a specific value (like a test
+        // expecting rotation +2 rad/s) shouldn't see the value clobbered
+        // to -2 half the time.
+        angularSpeed = angularSpeed ??
+            ((minAngularSpeed +
                     (rng ?? math.Random()).nextDouble() *
-                        (maxAngularSpeed - minAngularSpeed))) *
-            ((rng ?? math.Random()).nextBool() ? 1 : -1),
+                        (maxAngularSpeed - minAngularSpeed)) *
+                ((rng ?? math.Random()).nextBool() ? 1 : -1)),
         super(
           position: worldPosition,
           // Bounding box covers a full arm sweep in any direction.

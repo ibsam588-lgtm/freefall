@@ -83,6 +83,11 @@ class Player extends PositionComponent {
   /// world to host the particle component).
   PlayerParticleSystem? particleSystem;
 
+  /// Fires every time [onHit] actually lands a hit (returns true). The
+  /// host wires this to ScoreManager so the combo can collapse on
+  /// damage. Not fired for i-framed or already-dead hits.
+  void Function()? onHitCallback;
+
   /// Current world-space velocity. Public so tests can inspect it.
   final Vector2 velocity = Vector2.zero();
 
@@ -267,6 +272,7 @@ class Player extends PositionComponent {
     } else {
       _invincibleTimer = invincibilityDuration;
     }
+    onHitCallback?.call();
     return true;
   }
 
