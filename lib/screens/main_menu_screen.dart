@@ -23,14 +23,12 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../app/app_routes.dart';
 import '../repositories/coin_repository.dart';
 import '../repositories/daily_login_repository.dart';
 import '../repositories/store_repository.dart';
 import '../services/settings_service.dart';
 import 'daily_login_screen.dart';
-import 'game_screen.dart';
-import 'settings_screen.dart';
-import 'store_screen.dart';
 
 class MainMenuScreen extends StatefulWidget {
   final CoinRepository coinRepo;
@@ -121,14 +119,8 @@ class _MainMenuScreenState extends State<MainMenuScreen>
     setState(() => _streak = s);
   }
 
-  void _comingSoon(String label) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('$label coming soon'),
-        duration: const Duration(seconds: 1),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+  void _go(String routeName) {
+    Navigator.of(context).pushNamed(routeName);
   }
 
   @override
@@ -261,41 +253,32 @@ class _MainMenuScreenState extends State<MainMenuScreen>
           _menuButton(
             'PLAY',
             const Color(0xFF40E0D0),
-            () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => const GameScreen(),
-              ),
-            ),
+            () => _go(AppRoutes.game),
           ),
           const SizedBox(height: 10),
           _menuButton(
             'STORE',
             const Color(0xFFFF9100),
-            () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => StoreScreen(
-                  coinRepo: widget.coinRepo,
-                  storeRepo: widget.storeRepo,
-                ),
-              ),
-            ),
+            () => _go(AppRoutes.store),
           ),
           const SizedBox(height: 10),
-          _menuButton('STATS', const Color(0xFFFFD700),
-              () => _comingSoon('Stats')),
+          _menuButton(
+            'STATS',
+            const Color(0xFFFFD700),
+            () => _go(AppRoutes.stats),
+          ),
           const SizedBox(height: 10),
           _menuButton(
             'SETTINGS',
             const Color(0xFF80DEEA),
-            () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => SettingsScreen(settings: widget.settings),
-              ),
-            ),
+            () => _go(AppRoutes.settings),
           ),
           const SizedBox(height: 10),
-          _menuButton('LEADERBOARD', const Color(0xFFB388FF),
-              () => _comingSoon('Leaderboard')),
+          _menuButton(
+            'LEADERBOARD',
+            const Color(0xFFB388FF),
+            () => _go(AppRoutes.leaderboard),
+          ),
         ],
       ),
     );

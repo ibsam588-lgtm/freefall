@@ -4,40 +4,50 @@
 // shows depth/coins/gems/near-misses/best-combo lines, fires a
 // "NEW BEST!" sting when the run beat the all-time high, and offers
 // three actions:
-//   * Revive — let the player keep falling. Disabled if not available.
-//   * Play Again — restart from depth zero.
-//   * Double Coins — watch a rewarded ad (callback hook).
+//   * Revive — watch a rewarded ad to keep falling.
+//   * Double Coins — watch a rewarded ad to 2× the run's coins.
+//   * Play Again — restart the run from depth zero.
 //
 // The screen is a Flutter widget, not a Flame component — putting it
-// on top of the GameWidget is the host's job (the existing GameScreen
-// owns the Stack).
+// on top of the GameWidget is the host's job (the GameScreen owns
+// the Stack).
 
 import 'package:flutter/material.dart';
 
 import '../models/run_stats.dart';
+import '../repositories/coin_repository.dart';
+import '../services/ad_service.dart';
 
 class RunSummaryScreen extends StatefulWidget {
   /// Run stats to display. The widget animates the score from 0 up to
   /// [stats.score] when it mounts.
   final RunStats stats;
 
-  /// Called when the player taps Revive. Optional — pass null and the
-  /// button will render disabled.
-  final VoidCallback? onRevive;
-
   /// Called when the player taps Play Again. Required.
   final VoidCallback onPlayAgain;
 
-  /// Called when the player taps Double Coins (rewarded ad). Optional —
-  /// disabled when null.
-  final VoidCallback? onDoubleCoins;
+  /// Called after a successful Revive flow (rewarded ad watched +
+  /// player wants to continue). Optional — if null the Revive button
+  /// is hidden entirely (e.g. for a hard game-over).
+  final VoidCallback? onRevive;
+
+  /// Optional ad service. When non-null, Revive + Double Coins watch
+  /// a rewarded ad before crediting their reward; when null, both
+  /// buttons render disabled. Tests pass a fake here.
+  final AdService? adService;
+
+  /// Required when [adService] is non-null and the player can earn
+  /// the 2× coins reward. The screen credits the bonus coins through
+  /// this repo on a successful watch.
+  final CoinRepository? coinRepo;
 
   const RunSummaryScreen({
     super.key,
     required this.stats,
     required this.onPlayAgain,
     this.onRevive,
-    this.onDoubleCoins,
+    this.adService,
+    this.coinRepo,
   });
 
   @override
@@ -49,6 +59,14 @@ class _RunSummaryScreenState extends State<RunSummaryScreen>
   late final AnimationController _scoreController;
   late final Animation<int> _scoreAnimation;
   late final AnimationController _newBestController;
+
+  /// Whether the Double Coins reward has already been claimed this
+  /// summary view. Locks the button after a successful watch.
+  bool _doubledCoins = false;
+
+  /// Whether an ad watch is currently in flight. Disables both ad
+  /// buttons so a flaky double-tap doesn't queue two reward grants.
+  bool _adInFlight = false;
 
   @override
   void initState() {
@@ -78,6 +96,76 @@ class _RunSummaryScreenState extends State<RunSummaryScreen>
     super.dispose();
   }
 
+  // ---- ad-driven actions --------------------------------------------------
+
+  Future<void> _onReviveTapped() async {
+    final ads = widget.adService;
+    final onRevive = widget.onRevive;
+    if (ads == null || onRevive == null || _adInFlight) return;
+    setState(() => _adInFlight = true);
+    await ads.showRewardedAd(
+      onRewarded: (_) {
+        if (!mounted) return;
+        setState(() => _adInFlight = false);
+        onRevive();
+      },
+      onFailed: () {
+        if (!mounted) return;
+        setState(() => _adInFlight = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Revive ad unavailable'),
+            duration: Duration(seconds: 1),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _onDoubleCoinsTapped() async {
+    final ads = widget.adService;
+    final coinRepo = widget.coinRepo;
+    if (ads == null || coinRepo == null || _adInFlight) return;
+    setState(() => _adInFlight = true);
+    await ads.showRewardedAd(
+      onRewarded: (_) async {
+        // Award an extra `stats.coinsEarned` — i.e. doubling. The ad
+        // service's flat per-watch reward is intentionally ignored
+        // here; this CTA's contract is "match what you just earned".
+        final bonus = widget.stats.coinsEarned;
+        if (bonus > 0) {
+          await coinRepo.addCoins(bonus);
+        }
+        if (!mounted) return;
+        setState(() {
+          _adInFlight = false;
+          _doubledCoins = true;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('+$bonus bonus coins!'),
+            duration: const Duration(seconds: 1),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      },
+      onFailed: () {
+        if (!mounted) return;
+        setState(() => _adInFlight = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Coin ad unavailable'),
+            duration: Duration(seconds: 1),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      },
+    );
+  }
+
+  // ---- build --------------------------------------------------------------
+
   @override
   Widget build(BuildContext context) {
     final stats = widget.stats;
@@ -96,8 +184,8 @@ class _RunSummaryScreenState extends State<RunSummaryScreen>
                   const SizedBox(height: 8),
                   _buildScoreDisplay(),
                   const SizedBox(height: 24),
-                  _buildStatRow('Depth',
-                      '${stats.depthMeters.toStringAsFixed(0)}m'),
+                  _buildStatRow(
+                      'Depth', '${stats.depthMeters.toStringAsFixed(0)}m'),
                   _buildStatRow('Coins', '${stats.coinsEarned}'),
                   _buildStatRow('Gems', '${stats.gemsCollected}'),
                   _buildStatRow('Near misses', '${stats.nearMisses}'),
@@ -200,40 +288,51 @@ class _RunSummaryScreenState extends State<RunSummaryScreen>
   }
 
   Widget _buildActions() {
+    final reviveAvailable =
+        widget.onRevive != null && widget.adService != null;
+    final doubleCoinsAvailable = widget.adService != null &&
+        widget.coinRepo != null &&
+        widget.stats.coinsEarned > 0 &&
+        !_doubledCoins;
+
     return Column(
       children: [
-        SizedBox(
-          width: double.infinity,
-          child: FilledButton(
-            onPressed: widget.onRevive,
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFF40E0D0),
-              padding: const EdgeInsets.symmetric(vertical: 14),
-            ),
-            child: const Text(
-              'REVIVE',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 2,
+        if (reviveAvailable) ...[
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: _adInFlight ? null : _onReviveTapped,
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF40E0D0),
+                foregroundColor: const Color(0xFF101018),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+              child: Text(
+                _adInFlight ? 'PLEASE WAIT…' : 'REVIVE (Watch Ad)',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 2,
+                ),
               ),
             ),
           ),
-        ),
-        const SizedBox(height: 8),
+          const SizedBox(height: 8),
+        ],
         SizedBox(
           width: double.infinity,
           child: FilledButton(
-            onPressed: widget.onPlayAgain,
+            onPressed: _adInFlight ? null : widget.onPlayAgain,
             style: FilledButton.styleFrom(
               backgroundColor: const Color(0xFFFF9100),
+              foregroundColor: const Color(0xFF101018),
               padding: const EdgeInsets.symmetric(vertical: 14),
             ),
             child: const Text(
               'PLAY AGAIN',
               style: TextStyle(
                 fontSize: 16,
-                fontWeight: FontWeight.w800,
+                fontWeight: FontWeight.w900,
                 letterSpacing: 2,
               ),
             ),
@@ -243,14 +342,19 @@ class _RunSummaryScreenState extends State<RunSummaryScreen>
         SizedBox(
           width: double.infinity,
           child: TextButton(
-            onPressed: widget.onDoubleCoins,
+            onPressed: doubleCoinsAvailable && !_adInFlight
+                ? _onDoubleCoinsTapped
+                : null,
             style: TextButton.styleFrom(
               foregroundColor: const Color(0xFFFFD700),
+              disabledForegroundColor: const Color(0x55FFD700),
               padding: const EdgeInsets.symmetric(vertical: 14),
             ),
-            child: const Text(
-              '2X COINS (Watch Ad)',
-              style: TextStyle(
+            child: Text(
+              _doubledCoins
+                  ? 'COINS DOUBLED ✓'
+                  : '2X COINS (Watch Ad)',
+              style: const TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w700,
                 letterSpacing: 1.5,

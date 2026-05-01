@@ -111,6 +111,16 @@ class FreefallGame extends FlameGame {
   late final ComboDisplay comboDisplay;
   late final StatsRepository statsRepository;
 
+  /// Phase 9: fired exactly once per run when the player's death
+  /// sequence has finished and the run summary should be shown.
+  /// GameScreen sets this; FreefallGame fires it from the per-frame
+  /// death-edge detector.
+  void Function()? onRunEnded;
+
+  /// Internal: tracks whether [onRunEnded] has been fired for the
+  /// current run. Cleared by [restartRun].
+  bool _runEnded = false;
+
   FreefallGame()
       : super(
           camera: CameraComponent.withFixedResolution(
@@ -234,12 +244,19 @@ class FreefallGame extends FlameGame {
     // anchored to the screen instead of drifting with the world.
     await camera.viewport.add(zoneTransition);
 
-    // Phase 5: HUD rides the same viewport so it tracks the screen.
+    // Phase 5+9: HUD rides the same viewport so it tracks the screen.
+    // Live readers wired here so the HUD pulls depth/zone/score off
+    // the freshest values every frame without owning a system ref.
     hud = GameHud(
       powerupManager: powerupManager,
       collectibleManager: collectibleManager,
       player: HudPlayerAdapter(() => player.lives, () => player.maxLives),
-    );
+    )
+      ..scoreGetter = (() => scoreManager.score)
+      ..depthMetersGetter = (() => cameraSystem.currentDepthMeters)
+      ..zoneNameGetter = (() => zoneManager.currentZone.name)
+      ..zoneProgressGetter =
+          (() => zoneManager.zoneFraction(zoneManager.currentDepthMeters));
     await camera.viewport.add(hud);
 
     // Phase 6: combo display sits in the same viewport so it stays
@@ -336,7 +353,34 @@ class FreefallGame extends FlameGame {
     // blends and the orb's color stay in sync without a callback.
     player.setZoneColor(zoneManager.currentZone.accentColor);
 
+    // Phase 9: edge-trigger the run-summary callback the first frame
+    // after the player dies. The callback owns the actual screen
+    // transition; we just hand it the moment to fire.
+    if (!_runEnded && player.isDead) {
+      _runEnded = true;
+      onRunEnded?.call();
+    }
+
     super.update(clamped);
+  }
+
+  /// Phase 9: rebuild a fresh run on the same FreefallGame instance.
+  /// Drops every in-flight obstacle/collectible, clears scoring state,
+  /// and respawns the player at the start position. Cheaper than
+  /// rebuilding FreefallGame because Flame's component tree + cached
+  /// viewport stay live.
+  void restartRun() {
+    obstacleManager.clear();
+    collectibleManager.clear();
+    powerupManager.clear();
+    scoreManager.reset();
+    nearMissDetector.reset();
+    cameraSystem.reset();
+    obstacleSpawner.reset();
+    collectibleSpawner.reset();
+    hud.sessionCoins = 0;
+    _runEnded = false;
+    player.respawn();
   }
 
   /// Total fixed-timestep ticks since startup. Useful for tests.

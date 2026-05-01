@@ -2,14 +2,20 @@
 //
 // Heads-up display overlay for the running game. Lives in the camera
 // viewport (not the world) so it stays anchored to the screen as the
-// player descends. Reads from session-scoped state (coin counter +
-// active powerups + lives) every frame and paints:
-//   * top-center: pile-of-coins counter for the current run,
-//   * bottom-left: dot lives (filled = alive, hollow = lost),
-//   * top-right: active powerup icons with countdown bars.
+// player descends. Reads from session-scoped state every frame and
+// paints all the live counters:
+//   * top-left:    depth "1234m" + downward arrow
+//   * top-center:  coin counter + small coin icon
+//   * top-right:   zone name + 0..1 progress bar
+//   * bottom-left: lives as filled/empty dots
+//   * bottom-center: score
+//   * mid-right:   active powerup pill strip (icon + countdown bar)
 //
-// Scoring + currency persistence is handled elsewhere — this is just
-// the read-only display layer.
+// All values are sourced through opt-in getter callbacks so the HUD
+// stays decoupled from the systems it visualizes — tests can stub it
+// without booting Flame.
+
+import 'dart:math' as math;
 
 import 'package:flame/components.dart';
 import 'package:flutter/material.dart';
@@ -35,6 +41,8 @@ class GameHud extends PositionComponent {
   static const double powerupSpacing = 8;
   static const double lifeDotRadius = 6;
   static const double lifeDotSpacing = 16;
+  static const double zoneBarWidth = 90;
+  static const double zoneBarHeight = 5;
 
   final PowerupManager powerupManager;
   final CollectibleManager collectibleManager;
@@ -48,6 +56,13 @@ class GameHud extends PositionComponent {
   /// instantly without waiting on async storage.
   int sessionCoins = 0;
 
+  /// Live readers — set by the host after construction. Each returns
+  /// the freshest value for its widget; the HUD never caches them.
+  int Function()? scoreGetter;
+  double Function()? depthMetersGetter;
+  String Function()? zoneNameGetter;
+  double Function()? zoneProgressGetter;
+
   GameHud({
     required this.powerupManager,
     required this.collectibleManager,
@@ -59,16 +74,55 @@ class GameHud extends PositionComponent {
 
   @override
   void render(Canvas canvas) {
+    _renderDepth(canvas);
     _renderCoinCounter(canvas);
+    _renderZone(canvas);
     _renderLives(canvas);
+    _renderScore(canvas);
     _renderPowerups(canvas);
+  }
+
+  // ---- top row ------------------------------------------------------------
+
+  void _renderDepth(Canvas canvas) {
+    final getter = depthMetersGetter;
+    if (getter == null) return;
+    final depth = getter();
+    final tp = TextPainter(
+      text: TextSpan(
+        text: '${depth.toStringAsFixed(0)}m',
+        style: const TextStyle(
+          color: Color(0xFFFFFFFF),
+          fontSize: 18,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 1,
+          shadows: [Shadow(color: Color(0xCC000000), blurRadius: 4)],
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+    const left = padding;
+    const top = padding;
+
+    // Downward chevron — drawn as a small triangle so it reads at
+    // tiny sizes without leaning on icon fonts.
+    const cx = left + 8;
+    const cy = top + 9;
+    final path = Path()
+      ..moveTo(cx - 5, cy - 3)
+      ..lineTo(cx + 5, cy - 3)
+      ..lineTo(cx, cy + 5)
+      ..close();
+    canvas.drawPath(path, Paint()..color = const Color(0xFFFFD700));
+
+    tp.paint(canvas, const Offset(left + 18, top - 2));
   }
 
   void _renderCoinCounter(Canvas canvas) {
     final cx = size.x / 2;
-    const cy = padding + 18;
+    const cy = padding + 12;
 
-    // Coin icon — small gold dot on the left of the number.
     final iconC = Offset(cx - 28, cy);
     canvas.drawCircle(
       iconC,
@@ -87,15 +141,63 @@ class GameHud extends PositionComponent {
           color: Color(0xFFFFFFFF),
           fontSize: 22,
           fontWeight: FontWeight.w900,
-          shadows: [
-            Shadow(color: Color(0xCC000000), blurRadius: 4),
-          ],
+          shadows: [Shadow(color: Color(0xCC000000), blurRadius: 4)],
         ),
       ),
       textDirection: TextDirection.ltr,
     )..layout();
     tp.paint(canvas, Offset(cx - 14, cy - tp.height / 2));
   }
+
+  void _renderZone(Canvas canvas) {
+    final nameGetter = zoneNameGetter;
+    if (nameGetter == null) return;
+    final name = nameGetter();
+    final progress = zoneProgressGetter?.call() ?? 0.0;
+
+    final right = size.x - padding;
+    const top = padding;
+
+    final tp = TextPainter(
+      text: TextSpan(
+        text: name.toUpperCase(),
+        style: const TextStyle(
+          color: Color(0xFFFFFFFF),
+          fontSize: 12,
+          letterSpacing: 2.5,
+          fontWeight: FontWeight.w900,
+          shadows: [Shadow(color: Color(0xCC000000), blurRadius: 4)],
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final textOrigin = Offset(right - tp.width, top);
+    tp.paint(canvas, textOrigin);
+
+    // Progress bar — sits directly under the label so it reads as a
+    // single unit. Width matches the wider of (label, zoneBarWidth).
+    final barLeft = right - math.max(zoneBarWidth, tp.width);
+    final barTop = textOrigin.dy + tp.height + 4;
+    final barW = math.max(zoneBarWidth, tp.width);
+    final pct = progress.clamp(0.0, 1.0);
+
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(barLeft, barTop, barW, zoneBarHeight),
+        const Radius.circular(2),
+      ),
+      Paint()..color = const Color(0x44000000),
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(barLeft, barTop, barW * pct, zoneBarHeight),
+        const Radius.circular(2),
+      ),
+      Paint()..color = const Color(0xFF40E0D0),
+    );
+  }
+
+  // ---- bottom row ---------------------------------------------------------
 
   void _renderLives(Canvas canvas) {
     final p = player;
@@ -125,12 +227,36 @@ class GameHud extends PositionComponent {
     }
   }
 
+  void _renderScore(Canvas canvas) {
+    final getter = scoreGetter;
+    if (getter == null) return;
+    final cx = size.x / 2;
+    final cy = size.y - padding - 12;
+    final tp = TextPainter(
+      text: TextSpan(
+        text: '${getter()}',
+        style: const TextStyle(
+          color: Color(0xFFFFFFFF),
+          fontSize: 20,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 1,
+          shadows: [Shadow(color: Color(0xCC000000), blurRadius: 6)],
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    tp.paint(canvas, Offset(cx - tp.width / 2, cy - tp.height / 2));
+  }
+
+  // ---- powerup strip ------------------------------------------------------
+
   void _renderPowerups(Canvas canvas) {
     final effects = powerupManager.activeEffects.toList(growable: false);
     if (effects.isEmpty) return;
 
     final right = size.x - padding;
-    const top = padding;
+    // Sit just under the zone progress bar so the top row stays clean.
+    const top = padding + 30 + zoneBarHeight + 8;
     for (int i = 0; i < effects.length; i++) {
       final eff = effects[i];
       final x = right -
@@ -174,8 +300,6 @@ class GameHud extends PositionComponent {
         ..strokeWidth = 2
         ..color = accent,
     );
-    // Per-type letter glyph — keeps the HUD readable even when the
-    // pill is small.
     final glyph = switch (type) {
       PowerupType.shield => 'S',
       PowerupType.magnet => 'M',
@@ -212,4 +336,3 @@ class HudPlayerAdapter implements HudPlayerSnapshot {
   @override
   int get maxLives => maxLivesGetter();
 }
-
