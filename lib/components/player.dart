@@ -168,6 +168,19 @@ class Player extends PositionComponent {
     if (_lives > _maxLives) _lives = _maxLives;
   }
 
+  /// Grant +1 life. If already at the max-lives cap, bumps the cap
+  /// (capped at [absoluteMaxLives]). Used by the extraLife powerup.
+  void gainLife() {
+    if (_lives < _maxLives) {
+      _lives++;
+      return;
+    }
+    if (_maxLives < absoluteMaxLives) {
+      _maxLives++;
+      _lives = _maxLives;
+    }
+  }
+
   /// Update the active skin and propagate the trail color to the trail
   /// renderer (if mounted).
   void setSkin(PlayerSkin newSkin) {

@@ -11,12 +11,16 @@
 import 'package:flame/components.dart';
 import 'package:flame/game.dart';
 
+import '../components/hud.dart';
 import '../components/particle_system.dart' as comp_particles;
 import '../components/player.dart';
 import '../components/zone_background.dart';
 import '../components/zone_transition.dart';
+import '../repositories/coin_repository.dart';
 import '../systems/camera_system.dart';
 import '../systems/coin_system.dart';
+import '../systems/collectible_manager.dart';
+import '../systems/collectible_spawner.dart';
 import '../systems/collision_system.dart';
 import '../systems/difficulty_scaler.dart';
 import '../systems/gravity_system.dart';
@@ -27,6 +31,7 @@ import '../systems/obstacle_spawner.dart';
 import '../systems/obstacle_system.dart';
 import '../systems/particle_system.dart';
 import '../systems/player_system.dart';
+import '../systems/powerup_manager.dart';
 import '../systems/zone_manager.dart';
 import 'game_loop.dart';
 
@@ -80,6 +85,16 @@ class FreefallGame extends FlameGame {
   // through PlayerParticleSystem.triggerDeath / triggerRespawn.
   late final comp_particles.PlayerParticleSystem playerParticles;
 
+  // Phase 5: collectibles + powerups. PowerupManager runs on the fixed
+  // step bus (timer countdowns); CollectibleManager owns the live set
+  // and pickup pipeline; CollectibleSpawner produces them ahead of the
+  // camera. CoinRepository persists the spendable balance across runs.
+  late final PowerupManager powerupManager;
+  late final CollectibleManager collectibleManager;
+  late final CollectibleSpawner collectibleSpawner;
+  late final CoinRepository coinRepository;
+  late final GameHud hud;
+
   FreefallGame()
       : super(
           camera: CameraComponent.withFixedResolution(
@@ -128,6 +143,21 @@ class FreefallGame extends FlameGame {
       viewportHeight: logicalHeight,
     );
 
+    // Phase 5: powerup + collectibles pipeline. Built before the loop is
+    // wired so we can register the systems in the right order.
+    powerupManager = PowerupManager();
+    collectibleManager = CollectibleManager(
+      onAttach: (c) => world.add(c),
+      onDetach: (c) => c.removeFromParent(),
+    )..powerupManager = powerupManager;
+    collectibleSpawner = CollectibleSpawner(
+      cameraSystem: cameraSystem,
+      manager: collectibleManager,
+      playWidth: logicalWidth,
+      viewportHeight: logicalHeight,
+    );
+    coinRepository = CoinRepository();
+
     gameLoop = GameLoop.standard(
       input: inputSystem,
       gravity: gravitySystem,
@@ -142,6 +172,11 @@ class FreefallGame extends FlameGame {
     // manager runs last so any pruning happens after spawner adds.
     gameLoop.register(obstacleSpawner);
     gameLoop.register(obstacleManager);
+    // Powerup manager ticks before collectible manager so any expiring
+    // magnet doesn't pull a coin one extra frame after expiry.
+    gameLoop.register(powerupManager);
+    gameLoop.register(collectibleSpawner);
+    gameLoop.register(collectibleManager);
 
     // Background goes into the world *before* the player so it sits at
     // the bottom of the draw order. The component reads from
@@ -167,6 +202,31 @@ class FreefallGame extends FlameGame {
     // Zone-name flash overlay sits in the camera viewport so it stays
     // anchored to the screen instead of drifting with the world.
     await camera.viewport.add(zoneTransition);
+
+    // Phase 5: HUD rides the same viewport so it tracks the screen.
+    hud = GameHud(
+      powerupManager: powerupManager,
+      collectibleManager: collectibleManager,
+      player: HudPlayerAdapter(() => player.lives, () => player.maxLives),
+    );
+    await camera.viewport.add(hud);
+
+    // Phase 5: now that player + hud both exist, wire pickup callbacks.
+    // extraLife heals or pushes the cap; coins/gems bump the live HUD
+    // counter and queue an async persistence write.
+    powerupManager.onExtraLife = player.gainLife;
+    collectibleManager.onCoinCollected = (coin) {
+      final mult = powerupManager.coinMultiplier;
+      final value = (coin.value * mult).round();
+      hud.sessionCoins += value;
+      coinRepository.addCoins(value);
+    };
+    collectibleManager.onGemCollected = (gem) {
+      final mult = powerupManager.scoreMultiplier;
+      final value = (gem.value * mult).round();
+      hud.sessionCoins += value;
+      coinRepository.addCoins(value);
+    };
 
     // The Flame camera follows the player vertically. The auto-scroll
     // feeling comes from the player constantly accelerating downward
@@ -194,6 +254,13 @@ class FreefallGame extends FlameGame {
     final viewportTopY = player.position.y - logicalHeight / 2;
     obstacleManager.pruneOffscreen(viewportTopY);
     obstacleManager.notifyPlayer(player.position);
+
+    // Phase 5: drive collectible magnet + pickup detection from the
+    // host (instead of inside the manager's update) so we always see
+    // the freshest player position. Pruning runs against the same
+    // viewport-top reference as obstacles for consistency.
+    collectibleManager.runPickupPass(player.position, clamped);
+    collectibleManager.pruneOffscreen(viewportTopY);
 
     // Phase 4: tint the player's glow with the active zone accent. Done
     // every tick (cheap — just stashes a color) so zone-edge gradient
