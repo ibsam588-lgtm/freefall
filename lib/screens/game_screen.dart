@@ -70,6 +70,10 @@ class _GameScreenState extends State<GameScreen> {
     mgr.onRunStarted();
     _game.achievementManager = mgr;
     _game.ghostRunner = deps.ghostRunner;
+    _game.audio = deps.audioService;
+    // Mirror the latest settings into the audio service so a player
+    // who muted between runs doesn't hear the next session.
+    deps.audioService.syncFromSettings(deps.settings);
     deps.ghostRunner.onRunStarted();
   }
 
@@ -142,6 +146,13 @@ class _GameScreenState extends State<GameScreen> {
       leaderboardId: 'main',
       score: resolved.score,
     );
+    // Phase 11: stop the in-game music and play the new-high fanfare
+    // if the run beat the previous record. We stop music regardless
+    // so the summary screen isn't drowned out by a zone loop.
+    await deps.audioService.stopMusic();
+    if (resolved.isNewHighScore) {
+      deps.audioService.playNewHighScore();
+    }
     if (!mounted) return;
     setState(() {
       // Stash the resolved stats so the summary widget rebuilds with

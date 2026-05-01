@@ -16,12 +16,23 @@
 
 import 'package:flutter/material.dart';
 
+import '../services/audio_service.dart';
 import '../services/settings_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   final SettingsService settings;
 
-  const SettingsScreen({super.key, required this.settings});
+  /// Phase 11: optional audio backend. When wired, sound/music toggles
+  /// are mirrored into [AudioService] so the change is audible
+  /// instantly (without waiting for a fresh game session to read
+  /// settings on launch).
+  final AudioService? audioService;
+
+  const SettingsScreen({
+    super.key,
+    required this.settings,
+    this.audioService,
+  });
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -52,6 +63,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _s.soundEnabled,
             (v) async {
               await _s.setSoundEnabled(v);
+              widget.audioService?.syncFromSettings(_s);
               setState(() {});
             },
           ),
@@ -60,6 +72,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _s.musicEnabled,
             (v) async {
               await _s.setMusicEnabled(v);
+              widget.audioService?.syncFromSettings(_s);
               setState(() {});
             },
           ),

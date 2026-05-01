@@ -70,8 +70,13 @@ class AppRoutes {
         ),
       AppRoutes.settings => MaterialPageRoute<void>(
           settings: settings,
-          builder: (ctx) =>
-              SettingsScreen(settings: AppDependencies.of(ctx).settings),
+          builder: (ctx) {
+            final deps = AppDependencies.of(ctx);
+            return SettingsScreen(
+              settings: deps.settings,
+              audioService: deps.audioService,
+            );
+          },
         ),
       leaderboard => MaterialPageRoute<void>(
           settings: settings,

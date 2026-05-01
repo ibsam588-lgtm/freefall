@@ -24,6 +24,7 @@ import '../components/zone_transition.dart';
 import '../models/zone.dart';
 import '../repositories/coin_repository.dart';
 import '../repositories/stats_repository.dart';
+import '../services/audio_service.dart';
 import '../systems/achievement_manager.dart';
 import '../systems/camera_system.dart';
 import '../systems/coin_system.dart';
@@ -134,9 +135,20 @@ class FreefallGame extends FlameGame {
   /// best ghost when the score beats the previous record.
   GhostRunner? ghostRunner;
 
+  /// Phase 11: optional audio backend. When set, gameplay events
+  /// trigger sound effects + zone music. Defaults to a silent
+  /// [AudioService] so the game runs without one wired up.
+  AudioService audio = AudioService();
+
   /// Elapsed run time in seconds — driven from [update]. Used by the
   /// ghost runner for sample timestamps; reset on [restartRun].
   double _runElapsed = 0;
+
+  /// Phase 11: throttle for the periodic whoosh SFX. Counts down to
+  /// zero, fires the whoosh, resets to [whooshIntervalSeconds]. Reset
+  /// on [restartRun] so the next run doesn't fire mid-respawn.
+  static const double whooshIntervalSeconds = 0.5;
+  double _whooshCooldown = whooshIntervalSeconds;
 
   FreefallGame()
       : super(
@@ -169,6 +181,11 @@ class FreefallGame extends FlameGame {
       zoneTransition.show(zone);
       scoreManager.onZoneComplete();
       _emitZoneEvent(zone);
+      // Phase 11: switch background music to the zone track and
+      // accent the change with the transition SFX. Same-zone calls
+      // dedup inside AudioService so a no-op rebuild stays silent.
+      audio.playZoneMusic(zone);
+      audio.playZoneTransition();
     });
     cameraSystem.zoneManager = zoneManager;
     difficultyScaler = DifficultyScaler(zoneManager: zoneManager);
@@ -297,6 +314,7 @@ class FreefallGame extends FlameGame {
       achievementManager?.onEvent(
         const AchievementEvent(AchievementEventKind.playerHit),
       );
+      audio.playHitImpact();
     };
 
     // Phase 5: now that player + hud both exist, wire pickup callbacks.
@@ -312,6 +330,7 @@ class FreefallGame extends FlameGame {
       hud.sessionCoins += value;
       coinRepository.addCoins(value);
       scoreManager.onCoinCollected();
+      audio.playCoinCollect(coin.coinType);
     };
     collectibleManager.onGemCollected = (gem) {
       // Gems award currency AND score; ScoreManager handles the score
@@ -324,6 +343,10 @@ class FreefallGame extends FlameGame {
       achievementManager?.onEvent(
         const AchievementEvent(AchievementEventKind.gemCollected),
       );
+      audio.playGemCollect(gem.gemType);
+    };
+    collectibleManager.onPowerupCollected = (powerup) {
+      audio.playPowerupPickup(powerup.powerupType);
     };
 
     // The Flame camera follows the player vertically. The auto-scroll
@@ -386,6 +409,7 @@ class FreefallGame extends FlameGame {
         color: const Color(0xFFFFD600),
         fontSize: 13,
       ));
+      audio.playNearMiss();
     }
 
     // Phase 4: tint the player's glow with the active zone accent. Done
@@ -393,11 +417,33 @@ class FreefallGame extends FlameGame {
     // blends and the orb's color stay in sync without a callback.
     player.setZoneColor(zoneManager.currentZone.accentColor);
 
+    // Phase 11: throttled wind whoosh. Pitch climbs with camera speed
+    // so the audio reinforces "things are getting fast." Suppressed
+    // while the player is mid-death-animation.
+    if (player.isAlive) {
+      _whooshCooldown -= clamped;
+      if (_whooshCooldown <= 0) {
+        _whooshCooldown = whooshIntervalSeconds;
+        final speed = cameraSystem.currentSpeed;
+        const baseSpeed = 200.0; // CameraSystem.baseSpeed
+        const maxSpeed = 800.0; // CameraSystem.maxSpeed
+        final t = ((speed - baseSpeed) / (maxSpeed - baseSpeed))
+            .clamp(0.0, 1.0);
+        // Map [0..1] → [0.5..2.0] so a slow fall is a low rumble and
+        // top speed is a sharp whistle.
+        final factor = 0.5 + t * 1.5;
+        audio.playWhoosh(factor);
+      }
+    }
+
     // Phase 9: edge-trigger the run-summary callback the first frame
     // after the player dies. The callback owns the actual screen
     // transition; we just hand it the moment to fire.
     if (!_runEnded && player.isDead) {
       _runEnded = true;
+      // Phase 11: shatter SFX on the same edge so it lands once per
+      // run instead of looping the death animation.
+      audio.playDeath();
       onRunEnded?.call();
     }
 
@@ -421,9 +467,15 @@ class FreefallGame extends FlameGame {
     hud.sessionCoins = 0;
     _runEnded = false;
     _runElapsed = 0;
+    _whooshCooldown = whooshIntervalSeconds;
     achievementManager?.onRunStarted();
     ghostRunner?.onRunStarted();
     player.respawn();
+    // Phase 11: respawn cue + restart the music for the starting zone
+    // (Stratosphere). playZoneMusic dedups so a fresh instance whose
+    // last music was already Stratosphere stays playing.
+    audio.playRespawn();
+    audio.playZoneMusic(zoneManager.currentZone.type);
   }
 
   /// Forward zone-enter events to the achievement manager. Maps the

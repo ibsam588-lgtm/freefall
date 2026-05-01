@@ -23,6 +23,8 @@ import 'repositories/daily_login_repository.dart';
 import 'repositories/stats_repository.dart';
 import 'repositories/store_repository.dart';
 import 'services/ad_service.dart';
+import 'services/audio_service.dart';
+import 'services/audio_service_impl.dart';
 import 'services/google_play_games_stub.dart';
 import 'services/settings_service.dart';
 import 'systems/achievement_manager.dart';
@@ -67,6 +69,14 @@ Future<void> main() async {
   await ghostRunner.load();
   const gameServices = GooglePlayGamesStub();
 
+  // Phase 11: real flame_audio backend. Every primitive is wrapped in
+  // try/catch so missing asset files (we ship without them) won't
+  // crash the game. Initial flag state mirrors SettingsService.
+  final AudioService audioService = FlameAudioService(
+    soundEnabled: settings.soundEnabled,
+    musicEnabled: settings.musicEnabled,
+  );
+
   runApp(FreefallApp(
     settings: settings,
     coinRepo: coinRepo,
@@ -78,6 +88,7 @@ Future<void> main() async {
     achievementManager: achievementManager,
     ghostRunner: ghostRunner,
     gameServices: gameServices,
+    audioService: audioService,
   ));
 }
 
@@ -92,6 +103,7 @@ class FreefallApp extends StatelessWidget {
   final AchievementManager achievementManager;
   final GhostRunner ghostRunner;
   final GooglePlayGamesService gameServices;
+  final AudioService audioService;
 
   const FreefallApp({
     super.key,
@@ -105,6 +117,7 @@ class FreefallApp extends StatelessWidget {
     required this.achievementManager,
     required this.ghostRunner,
     required this.gameServices,
+    required this.audioService,
   });
 
   @override
@@ -120,6 +133,7 @@ class FreefallApp extends StatelessWidget {
       achievementManager: achievementManager,
       ghostRunner: ghostRunner,
       gameServices: gameServices,
+      audioService: audioService,
       child: MaterialApp(
         title: 'Freefall',
         debugShowCheckedModeBanner: false,
