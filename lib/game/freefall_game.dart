@@ -12,15 +12,19 @@ import 'package:flame/components.dart';
 import 'package:flame/game.dart';
 
 import '../components/player.dart';
+import '../components/zone_background.dart';
+import '../components/zone_transition.dart';
 import '../systems/camera_system.dart';
 import '../systems/coin_system.dart';
 import '../systems/collision_system.dart';
+import '../systems/difficulty_scaler.dart';
 import '../systems/gravity_system.dart';
 import '../systems/input_system.dart';
 import '../systems/object_pool.dart';
 import '../systems/obstacle_system.dart';
 import '../systems/particle_system.dart';
 import '../systems/player_system.dart';
+import '../systems/zone_manager.dart';
 import 'game_loop.dart';
 
 class FreefallGame extends FlameGame {
@@ -45,6 +49,12 @@ class FreefallGame extends FlameGame {
   late final CoinSystem coinSystem;
   late final ParticleSystem particleSystem;
 
+  // Phase 2: zone & difficulty state. ZoneManager isn't a GameSystem
+  // (it's pumped by CameraSystem each tick); DifficultyScaler is a
+  // pure-function lookup, no per-frame work of its own.
+  late final ZoneManager zoneManager;
+  late final DifficultyScaler difficultyScaler;
+
   // Object pools, ready for Phase 2 to consume.
   late final ObstaclePool obstaclePool;
   late final CoinPool coinPool;
@@ -52,6 +62,8 @@ class FreefallGame extends FlameGame {
 
   late final GameLoop gameLoop;
   late final Player player;
+  late final ZoneBackground zoneBackground;
+  late final ZoneTransition zoneTransition;
 
   FreefallGame()
       : super(
@@ -74,6 +86,14 @@ class FreefallGame extends FlameGame {
     coinSystem = CoinSystem();
     particleSystem = ParticleSystem();
 
+    // Phase 2: zone state. The transition overlay listens for zone
+    // entries via ZoneManager's callback. CameraSystem owns pumping the
+    // manager each fixed step.
+    zoneTransition = ZoneTransition();
+    zoneManager = ZoneManager(onZoneEnter: zoneTransition.show);
+    cameraSystem.zoneManager = zoneManager;
+    difficultyScaler = DifficultyScaler(zoneManager: zoneManager);
+
     obstaclePool = ObstaclePool();
     coinPool = CoinPool();
     particlePool = ParticlePool();
@@ -89,11 +109,24 @@ class FreefallGame extends FlameGame {
       particle: particleSystem,
     );
 
+    // Background goes into the world *before* the player so it sits at
+    // the bottom of the draw order. The component reads from
+    // CameraSystem each frame and re-anchors itself to the viewport.
+    zoneBackground = ZoneBackground(
+      zoneManager: zoneManager,
+      cameraSystem: cameraSystem,
+    );
+    await world.add(zoneBackground);
+
     player = Player(
       gravity: gravitySystem,
       startPosition: Vector2(logicalWidth / 2, 120),
     );
     await world.add(player);
+
+    // Zone-name flash overlay sits in the camera viewport so it stays
+    // anchored to the screen instead of drifting with the world.
+    await camera.viewport.add(zoneTransition);
 
     // The Flame camera follows the player vertically. The auto-scroll
     // feeling comes from the player constantly accelerating downward

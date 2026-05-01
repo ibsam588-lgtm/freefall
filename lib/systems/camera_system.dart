@@ -12,6 +12,7 @@
 import 'package:flame/components.dart';
 
 import 'system_base.dart';
+import 'zone_manager.dart';
 
 class CameraSystem implements GameSystem {
   /// Initial scroll speed at depth 0.
@@ -39,6 +40,11 @@ class CameraSystem implements GameSystem {
   /// exposes it for follow logic.
   Vector2 playerWorldPosition = Vector2.zero();
 
+  /// Optional ZoneManager pumped each fixed step with the current depth.
+  /// Phase 2: keeping zone state in lockstep with camera scroll without
+  /// adding ZoneManager to the GameSystem registry (it isn't dt-driven).
+  ZoneManager? zoneManager;
+
   double get currentSpeed => _currentSpeed;
   double get scrolledPixels => _scrolledPixels;
 
@@ -53,6 +59,8 @@ class CameraSystem implements GameSystem {
     final steps = (_scrolledPixels / _distancePerStep).floor();
     final target = baseSpeed + steps * speedIncrement;
     _currentSpeed = target > maxSpeed ? maxSpeed : target;
+
+    zoneManager?.update(currentDepthMeters);
   }
 
   /// Reset for a new run.
@@ -60,5 +68,6 @@ class CameraSystem implements GameSystem {
     _currentSpeed = baseSpeed;
     _scrolledPixels = 0;
     playerWorldPosition.setZero();
+    zoneManager?.reset();
   }
 }
