@@ -21,6 +21,8 @@ import '../systems/difficulty_scaler.dart';
 import '../systems/gravity_system.dart';
 import '../systems/input_system.dart';
 import '../systems/object_pool.dart';
+import '../systems/obstacle_manager.dart';
+import '../systems/obstacle_spawner.dart';
 import '../systems/obstacle_system.dart';
 import '../systems/particle_system.dart';
 import '../systems/player_system.dart';
@@ -54,6 +56,13 @@ class FreefallGame extends FlameGame {
   // pure-function lookup, no per-frame work of its own.
   late final ZoneManager zoneManager;
   late final DifficultyScaler difficultyScaler;
+
+  // Phase 3: obstacle pipeline. The spawner produces obstacles two
+  // screens ahead; the manager owns their lifecycle (attach to world,
+  // prune offscreen). Both are GameSystems registered on the fixed-step
+  // bus so spawning stays in lockstep with camera advance.
+  late final ObstacleManager obstacleManager;
+  late final ObstacleSpawner obstacleSpawner;
 
   // Object pools, ready for Phase 2 to consume.
   late final ObstaclePool obstaclePool;
@@ -98,6 +107,21 @@ class FreefallGame extends FlameGame {
     coinPool = CoinPool();
     particlePool = ParticlePool();
 
+    // Phase 3: build the obstacle pipeline before the world is populated
+    // so the first-frame spawn batch is in flight by the time Flame draws.
+    obstacleManager = ObstacleManager(
+      onSpawn: (o) => world.add(o),
+      onDespawn: (o) => o.removeFromParent(),
+    );
+    obstacleSpawner = ObstacleSpawner(
+      cameraSystem: cameraSystem,
+      difficultyScaler: difficultyScaler,
+      zoneManager: zoneManager,
+      manager: obstacleManager,
+      playWidth: logicalWidth,
+      viewportHeight: logicalHeight,
+    );
+
     gameLoop = GameLoop.standard(
       input: inputSystem,
       gravity: gravitySystem,
@@ -108,6 +132,10 @@ class FreefallGame extends FlameGame {
       coin: coinSystem,
       particle: particleSystem,
     );
+    // Spawner runs after camera so it sees the freshest player position;
+    // manager runs last so any pruning happens after spawner adds.
+    gameLoop.register(obstacleSpawner);
+    gameLoop.register(obstacleManager);
 
     // Background goes into the world *before* the player so it sits at
     // the bottom of the draw order. The component reads from
@@ -146,6 +174,14 @@ class FreefallGame extends FlameGame {
     // Run our deterministic fixed-step systems FIRST so Flame's component
     // updates (which run in super.update) see the latest system state.
     gameLoop.tick(clamped);
+
+    // Phase 3: prune obstacles that have scrolled off the top of the
+    // viewport. Done here (after gameLoop) so we use the freshest camera
+    // position. The viewport top in world Y is the player's Y minus
+    // half the logical height since the camera follows the player.
+    final viewportTopY = player.position.y - logicalHeight / 2;
+    obstacleManager.pruneOffscreen(viewportTopY);
+    obstacleManager.notifyPlayer(player.position);
 
     super.update(clamped);
   }

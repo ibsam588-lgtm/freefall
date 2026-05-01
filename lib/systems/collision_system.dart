@@ -11,6 +11,7 @@
 
 import 'dart:ui';
 
+import '../components/obstacles/game_obstacle.dart';
 import 'system_base.dart';
 
 class CollisionSystem implements GameSystem {
@@ -96,6 +97,29 @@ class CollisionSystem implements GameSystem {
 
   int get cellCount => _grid.length;
   int get objectCount => _objectCells.length;
+
+  /// Phase-3 player-vs-obstacle pass. The spatial grid is built around
+  /// String IDs and Rects (used by the legacy Phase-1 obstacle data carrier);
+  /// obstacles spawned by Phase 3 are richer Flame components owned by
+  /// ObstacleManager. Rather than mirror them into the grid, we just iterate
+  /// the manager's small active list (~30 in flight at peak) and consult
+  /// each obstacle's own [GameObstacle.intersects] — that lets obstacles
+  /// like GapWall and RotatingObstacle do tight, non-AABB checks without
+  /// every other system having to know about their geometry.
+  ///
+  /// Returns the obstacles whose [intersects] returns true for [playerRect].
+  /// Caller is responsible for invoking [GameObstacle.onPlayerHit] and
+  /// reacting to the returned [ObstacleHitEffect].
+  List<GameObstacle> queryPlayerHits(
+    Rect playerRect,
+    List<GameObstacle> activeObstacles,
+  ) {
+    final hits = <GameObstacle>[];
+    for (final o in activeObstacles) {
+      if (o.intersects(playerRect)) hits.add(o);
+    }
+    return hits;
+  }
 
   @override
   void update(double dt) {
