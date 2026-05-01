@@ -17,6 +17,7 @@ import 'package:flutter/services.dart';
 
 import 'repositories/coin_repository.dart';
 import 'repositories/daily_login_repository.dart';
+import 'repositories/store_repository.dart';
 import 'screens/main_menu_screen.dart';
 import 'services/settings_service.dart';
 
@@ -40,18 +41,21 @@ Future<void> main() async {
     }
   }
 
-  // Phase 7: prefetch user prefs so the menu renders synchronously.
-  // Coin + daily-login repos are constructed eagerly (they each cache
-  // their own SharedPreferences future internally — first read fills it).
+  // Phase 7+8: prefetch user prefs and build the persistent stores.
+  // Each repo caches its own SharedPreferences/secure-storage future
+  // internally so the first read fills it — no need to await anything
+  // beyond settings here.
   final settings = SettingsService();
   await settings.load();
   final coinRepo = CoinRepository();
   final loginRepo = DailyLoginRepository();
+  final storeRepo = StoreRepository(coinRepo: coinRepo);
 
   runApp(FreefallApp(
     settings: settings,
     coinRepo: coinRepo,
     loginRepo: loginRepo,
+    storeRepo: storeRepo,
   ));
 }
 
@@ -59,12 +63,14 @@ class FreefallApp extends StatelessWidget {
   final SettingsService settings;
   final CoinRepository coinRepo;
   final DailyLoginRepository loginRepo;
+  final StoreRepository storeRepo;
 
   const FreefallApp({
     super.key,
     required this.settings,
     required this.coinRepo,
     required this.loginRepo,
+    required this.storeRepo,
   });
 
   @override
@@ -77,6 +83,7 @@ class FreefallApp extends StatelessWidget {
         settings: settings,
         coinRepo: coinRepo,
         loginRepo: loginRepo,
+        storeRepo: storeRepo,
       ),
     );
   }

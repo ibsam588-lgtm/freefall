@@ -25,20 +25,24 @@ import 'package:flutter/material.dart';
 
 import '../repositories/coin_repository.dart';
 import '../repositories/daily_login_repository.dart';
+import '../repositories/store_repository.dart';
 import '../services/settings_service.dart';
 import 'daily_login_screen.dart';
 import 'game_screen.dart';
 import 'settings_screen.dart';
+import 'store_screen.dart';
 
 class MainMenuScreen extends StatefulWidget {
   final CoinRepository coinRepo;
   final DailyLoginRepository loginRepo;
+  final StoreRepository storeRepo;
   final SettingsService settings;
 
   const MainMenuScreen({
     super.key,
     required this.coinRepo,
     required this.loginRepo,
+    required this.storeRepo,
     required this.settings,
   });
 
@@ -264,8 +268,18 @@ class _MainMenuScreenState extends State<MainMenuScreen>
             ),
           ),
           const SizedBox(height: 10),
-          _menuButton('STORE', const Color(0xFFFF9100),
-              () => _comingSoon('Store')),
+          _menuButton(
+            'STORE',
+            const Color(0xFFFF9100),
+            () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => StoreScreen(
+                  coinRepo: widget.coinRepo,
+                  storeRepo: widget.storeRepo,
+                ),
+              ),
+            ),
+          ),
           const SizedBox(height: 10),
           _menuButton('STATS', const Color(0xFFFFD700),
               () => _comingSoon('Stats')),
