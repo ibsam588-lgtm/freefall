@@ -1,0 +1,3 @@
+🎮 Freefall v1.0.0 — Initial Release!
+Fall through 5 unique zones: Stratosphere, City, Underground, Deep Ocean, and Core.
+Collect coins, unlock skins, and compete for the deepest dive!

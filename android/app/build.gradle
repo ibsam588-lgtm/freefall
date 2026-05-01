@@ -20,20 +20,47 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.corsairlabs.freefall"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
-        versionCode = flutter.versionCode
-        versionName = flutter.versionName
+        // Phase 16: pin the SDK floor + ceiling. Min 21 covers ~99% of
+        // active Android devices; target 34 keeps Play Store eligible.
+        minSdk = 21
+        targetSdk = 34
+        versionCode = 1
+        versionName = "1.0.0"
+    }
+
+    signingConfigs {
+        release {
+            // Phase 16: every secret reads from an env var so CI can
+            // inject the keystore + password without committing them.
+            // Falls back to "" so a `flutter build` on a dev box that
+            // doesn't have the env set just fails clean (instead of
+            // mis-signing with empty values + producing an installable
+            // APK that we couldn't track).
+            storeFile = file(System.getenv("KEYSTORE_PATH") ?: "keystore.jks")
+            storePassword = System.getenv("KEYSTORE_PASS") ?: ""
+            keyAlias = System.getenv("KEY_ALIAS") ?: "freefall"
+            keyPassword = System.getenv("KEY_PASS") ?: ""
+        }
     }
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
+            // Phase 16: production signing + R8 minify + ProGuard
+            // rules tuned for the Flame / Firebase / AdMob / IAP
+            // packages we ship with. See proguard-rules.pro for the
+            // keep rules.
+            signingConfig = signingConfigs.release
+            minifyEnabled = true
+            shrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+        }
+        debug {
+            // Debug stays on the debug keystore so `flutter run` works
+            // without any environment setup.
             signingConfig = signingConfigs.debug
         }
     }
