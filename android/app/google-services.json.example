@@ -1,0 +1,46 @@
+// Copy this to google-services.json and fill in your real values from
+// Firebase Console > Project Settings.
+//
+// This is an EXAMPLE TEMPLATE only. The actual google-services.json is
+// gitignored — it contains keys specific to your Firebase project and
+// must never be committed.
+{
+  "project_info": {
+    "project_number": "REPLACE_WITH_PROJECT_NUMBER",
+    "firebase_url": "https://REPLACE_WITH_PROJECT_ID.firebaseio.com",
+    "project_id": "REPLACE_WITH_PROJECT_ID",
+    "storage_bucket": "REPLACE_WITH_PROJECT_ID.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:REPLACE_WITH_PROJECT_NUMBER:android:REPLACE_WITH_APP_ID_HASH",
+        "android_client_info": {
+          "package_name": "com.corsairlabs.freefall"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "REPLACE_WITH_OAUTH_CLIENT_ID.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "REPLACE_WITH_ANDROID_API_KEY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "REPLACE_WITH_OAUTH_CLIENT_ID.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
