@@ -2,16 +2,23 @@
 //
 // App entry point. Locks the device to portrait, attempts a Firebase
 // init (gracefully no-ops if no google-services config has been added
-// yet — keeps Phase-1 dev runs working without provisioning), and
-// hands off to the Flame game widget.
+// yet — keeps Phase-1 dev runs working without provisioning),
+// bootstraps the persistent stores (settings, coin balance, daily
+// login), and hands off to the main menu.
+//
+// Repositories + the SettingsService instance are constructed once
+// here and threaded down to the screens that need them. Screens own
+// none of the IO — they just read/write through the injected handles.
 
 import 'package:firebase_core/firebase_core.dart';
-import 'package:flame/game.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'game/freefall_game.dart';
+import 'repositories/coin_repository.dart';
+import 'repositories/daily_login_repository.dart';
+import 'screens/main_menu_screen.dart';
+import 'services/settings_service.dart';
 
 Future<void> main() async {
   // Required before any platform-channel work (Firebase, orientation, etc.).
@@ -33,11 +40,32 @@ Future<void> main() async {
     }
   }
 
-  runApp(const FreefallApp());
+  // Phase 7: prefetch user prefs so the menu renders synchronously.
+  // Coin + daily-login repos are constructed eagerly (they each cache
+  // their own SharedPreferences future internally — first read fills it).
+  final settings = SettingsService();
+  await settings.load();
+  final coinRepo = CoinRepository();
+  final loginRepo = DailyLoginRepository();
+
+  runApp(FreefallApp(
+    settings: settings,
+    coinRepo: coinRepo,
+    loginRepo: loginRepo,
+  ));
 }
 
 class FreefallApp extends StatelessWidget {
-  const FreefallApp({super.key});
+  final SettingsService settings;
+  final CoinRepository coinRepo;
+  final DailyLoginRepository loginRepo;
+
+  const FreefallApp({
+    super.key,
+    required this.settings,
+    required this.coinRepo,
+    required this.loginRepo,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -45,8 +73,10 @@ class FreefallApp extends StatelessWidget {
       title: 'Freefall',
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark(useMaterial3: true),
-      home: GameWidget<FreefallGame>(
-        game: FreefallGame(),
+      home: MainMenuScreen(
+        settings: settings,
+        coinRepo: coinRepo,
+        loginRepo: loginRepo,
       ),
     );
   }

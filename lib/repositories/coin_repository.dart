@@ -12,6 +12,12 @@
 // All reads/writes are async because secure_storage is platform IO.
 // The repository is injection-friendly: callers pass a [storage]
 // instance, so unit tests pass a fake.
+//
+// Phase 7: balance changes broadcast via [balanceStream] so the HUD
+// and main-menu coin counter can refresh live whenever a daily-login
+// claim, ad reward, or store purchase moves the number.
+
+import 'dart:async';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
@@ -55,8 +61,19 @@ class CoinRepository {
 
   final CoinStorage storage;
 
+  /// Broadcast stream of post-write balances. UI bindings subscribe so
+  /// the HUD coin counter and main-menu pill update without polling.
+  /// We use a broadcast controller because multiple widgets may listen.
+  final StreamController<int> _balanceController =
+      StreamController<int>.broadcast();
+
   CoinRepository({CoinStorage? storage})
       : storage = storage ?? const SecureCoinStorage(FlutterSecureStorage());
+
+  /// Live balance changes. The stream emits the *new* balance after
+  /// each successful [addCoins] / [spendCoins]. Does NOT replay the
+  /// current value on subscribe — caller should pair with [getBalance].
+  Stream<int> get balanceStream => _balanceController.stream;
 
   /// Current spendable balance. Returns 0 if storage is empty (fresh
   /// install) or holds a malformed value.
@@ -74,6 +91,7 @@ class CoinRepository {
     final next = balance + amount;
     await storage.write(balanceKey, '$next');
     await storage.write(lifetimeKey, '${lifetime + amount}');
+    _emit(next);
     return next;
   }
 
@@ -87,13 +105,23 @@ class CoinRepository {
     }
     final next = balance - amount;
     await storage.write(balanceKey, '$next');
+    _emit(next);
     return next;
   }
+
+  /// Tear-down. Closes the broadcast stream so subscribers don't leak.
+  /// Tests + DI containers should call this when the repo is no longer
+  /// reachable.
+  Future<void> dispose() => _balanceController.close();
 
   Future<int> _readInt(String key) async {
     final raw = await storage.read(key);
     if (raw == null) return 0;
     return int.tryParse(raw) ?? 0;
+  }
+
+  void _emit(int balance) {
+    if (!_balanceController.isClosed) _balanceController.add(balance);
   }
 }
 
