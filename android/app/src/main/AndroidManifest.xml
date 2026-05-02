@@ -30,6 +30,13 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- Google Mobile Ads (AdMob) app id. The SDK throws on
+             initialize() without this meta-data. Production app id;
+             debug builds still serve test ad units via the
+             kReleaseMode switch in AdmobService. -->
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="ca-app-pub-8127360916614638~4291290335" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and
