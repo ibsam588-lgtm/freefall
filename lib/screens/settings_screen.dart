@@ -117,43 +117,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildControlRadio() {
-    return Column(
-      children: [
-        RadioListTile<ControlType>(
-          title: const Text(
-            'Tilt',
-            style: TextStyle(color: Colors.white),
+    return RadioGroup<ControlType>(
+      groupValue: _s.controlType,
+      onChanged: (v) async {
+        if (v == null) return;
+        await _s.setControlType(v);
+        setState(() {});
+      },
+      child: Column(
+        children: [
+          RadioListTile<ControlType>(
+            title: const Text(
+              'Tilt',
+              style: TextStyle(color: Colors.white),
+            ),
+            subtitle: const Text(
+              'Use the device accelerometer.',
+              style: TextStyle(color: Colors.white60, fontSize: 12),
+            ),
+            value: ControlType.tilt,
           ),
-          subtitle: const Text(
-            'Use the device accelerometer.',
-            style: TextStyle(color: Colors.white60, fontSize: 12),
+          RadioListTile<ControlType>(
+            title: const Text(
+              'Touch',
+              style: TextStyle(color: Colors.white),
+            ),
+            subtitle: const Text(
+              'Tap left/right edges of the screen.',
+              style: TextStyle(color: Colors.white60, fontSize: 12),
+            ),
+            value: ControlType.touch,
           ),
-          value: ControlType.tilt,
-          groupValue: _s.controlType,
-          onChanged: (v) async {
-            if (v == null) return;
-            await _s.setControlType(v);
-            setState(() {});
-          },
-        ),
-        RadioListTile<ControlType>(
-          title: const Text(
-            'Touch',
-            style: TextStyle(color: Colors.white),
-          ),
-          subtitle: const Text(
-            'Tap left/right edges of the screen.',
-            style: TextStyle(color: Colors.white60, fontSize: 12),
-          ),
-          value: ControlType.touch,
-          groupValue: _s.controlType,
-          onChanged: (v) async {
-            if (v == null) return;
-            await _s.setControlType(v);
-            setState(() {});
-          },
-        ),
-      ],
+        ],
+      ),
     );
   }
 
