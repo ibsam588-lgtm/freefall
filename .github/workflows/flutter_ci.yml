@@ -5,11 +5,18 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   build:
     name: Analyze, Test, and Build
     runs-on: ubuntu-latest
+
+    env:
+      KEYSTORE_B64: "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"
+      KEYSTORE_PASS: "FreefallStore2024!"
+      KEY_ALIAS: "freefall"
+      KEY_PASS: "FreefallStore2024!"
 
     steps:
       - name: Checkout
@@ -39,11 +46,32 @@ jobs:
       - name: Unit tests
         run: flutter test
 
+      - name: Decode upload keystore
+        run: echo "$KEYSTORE_B64" | base64 -d > android/app/keystore.jks
+
       - name: Build release APK
         run: flutter build apk --release
+        env:
+          KEYSTORE_PATH: keystore.jks
+          KEYSTORE_PASS: ${{ env.KEYSTORE_PASS }}
+          KEY_ALIAS: ${{ env.KEY_ALIAS }}
+          KEY_PASS: ${{ env.KEY_PASS }}
 
       - name: Build release AAB
         run: flutter build appbundle --release
+        env:
+          KEYSTORE_PATH: keystore.jks
+          KEYSTORE_PASS: ${{ env.KEYSTORE_PASS }}
+          KEY_ALIAS: ${{ env.KEY_ALIAS }}
+          KEY_PASS: ${{ env.KEY_PASS }}
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: freefall-release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Upload AAB artifact
         uses: actions/upload-artifact@v4
