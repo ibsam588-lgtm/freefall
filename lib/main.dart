@@ -71,6 +71,8 @@ Future<void> main() async {
   final AdService adService = AdmobService(
     rewardRepo: adRewardRepo,
     settings: settings,
+    rewardedAdUnitId: AdmobService.prodRewardedAdUnitId,
+    interstitialAdUnitId: AdmobService.prodInterstitialAdUnitId,
   );
   if (adService is AdmobService) {
     // Fire and forget — load up the first rewarded + interstitial in

@@ -52,13 +52,31 @@ enum RewardedPresentation {
 }
 
 class AdmobService extends AdService {
-  /// AdMob test ad unit ids — safe for dev builds. Production replaces
-  /// these via build-time injection (an env-flagged constructor would
-  /// land in Phase 13).
+  /// AdMob test ad unit ids — safe for dev builds. The default
+  /// constructor wires these so unit tests and local dev never charge
+  /// against the real AdMob account. The release build of `main.dart`
+  /// passes the `prod*` ids below explicitly.
   static const String testRewardedAdUnitId =
       'ca-app-pub-3940256099942544/5224354917';
   static const String testInterstitialAdUnitId =
       'ca-app-pub-3940256099942544/1033173712';
+
+  /// Production AdMob ids — Freefall AdMob account.
+  /// `prodAppId` matches the value in [AndroidManifest.xml]'s
+  /// `com.google.android.gms.ads.APPLICATION_ID` meta-data.
+  /// Banner / rewarded-interstitial constants are exposed for the
+  /// consumers that will land alongside future ad placements; today
+  /// only rewarded + interstitial are wired through this service.
+  static const String prodAppId =
+      'ca-app-pub-8127360916614638~4291290335';
+  static const String prodBannerAdUnitId =
+      'ca-app-pub-8127360916614638/2076190538';
+  static const String prodInterstitialAdUnitId =
+      'ca-app-pub-8127360916614638/2978208669';
+  static const String prodRewardedAdUnitId =
+      'ca-app-pub-8127360916614638/7303543045';
+  static const String prodRewardedInterstitialAdUnitId =
+      'ca-app-pub-8127360916614638/7959072600';
 
   /// Show an interstitial every Nth game-over. The classic mobile
   /// arcade pacing — frequent enough to monetize, rare enough not to

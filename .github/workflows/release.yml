@@ -66,6 +66,16 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      # NOTE: PLAY_SERVICE_ACCOUNT_JSON must be set manually as a
+      # GitHub Actions repository secret before the first tagged
+      # release. Create a service account in the Google Cloud
+      # console linked to the Play Console developer account, grant
+      # it the "Release manager" Play Console role, download the
+      # JSON key, and paste the entire file contents into the
+      # secret. Until this secret is populated the upload step
+      # below will fail; everything before it (build + AAB
+      # artifact) still runs, so the bundle is downloadable from
+      # the workflow run.
       - name: Upload to Play Store (Internal track)
         uses: r0adkll/upload-google-play@v1
         with:
