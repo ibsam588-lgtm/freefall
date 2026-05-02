@@ -46,3 +46,9 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Release signing — never commit keystores or their base64 encodings
+freefall-release.jks
+freefall-release.jks.b64
+*.jks
+*.keystore
