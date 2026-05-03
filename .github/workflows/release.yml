@@ -68,7 +68,6 @@ jobs:
       # repository secret before the first tagged release. Until then,
       # the build + AAB artifact steps still run successfully.
       - name: Upload to Play Store (Internal track)
-        if: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON != '' }}
         uses: r0adkll/upload-google-play@v1
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
