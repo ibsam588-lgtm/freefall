@@ -33,11 +33,11 @@ void main() {
         v = g.applyGravity(v, 1 / 60);
       }
       // Steady-state: gravity * dt == v * drag, so
-      // v == (800/60) / 0.02 ≈ 667 px/s at 60 Hz. The 1200 px/s
+      // v == (560/60) / 0.02 ≈ 467 px/s at 60 Hz. The 840 px/s
       // terminalVelocity is a safety cap that doesn't engage during
       // normal falling.
-      expect(v.y, greaterThan(550));
-      expect(v.y, lessThan(800));
+      expect(v.y, greaterThan(400));
+      expect(v.y, lessThan(600));
       expect(v.y, lessThanOrEqualTo(GravitySystem.terminalVelocity));
     });
 
