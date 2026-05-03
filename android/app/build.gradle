@@ -26,8 +26,8 @@ android {
         // requirement (was 34 — bumped per Play Console error).
         minSdk = 21
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.0.1"
+        versionCode flutter.versionCode
+        versionName flutter.versionName
     }
 
     signingConfigs {
