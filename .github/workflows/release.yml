@@ -47,11 +47,12 @@ jobs:
 
       - name: Set versionCode from run number
         run: |
-          # Use GITHUB_RUN_NUMBER as versionCode so every release gets a unique,
-          # strictly-increasing code regardless of what's in pubspec.yaml.
+          # Add a large base offset (10000) so the versionCode is always well above
+          # any code uploaded in early runs or manual uploads.
+          VERSION_CODE=$((GITHUB_RUN_NUMBER + 10000))
           CURRENT=$(grep '^version:' pubspec.yaml | sed 's/version: //' | cut -d'+' -f1)
-          sed -i "s/^version: .*/version: ${CURRENT}+${GITHUB_RUN_NUMBER}/" pubspec.yaml
-          echo "versionCode set to $GITHUB_RUN_NUMBER (version: ${CURRENT}+${GITHUB_RUN_NUMBER})"
+          sed -i "s/^version: .*/version: ${CURRENT}+${VERSION_CODE}/" pubspec.yaml
+          echo "versionCode set to $VERSION_CODE (version: ${CURRENT}+${VERSION_CODE})"
 
       - name: Decode upload keystore
         run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/app/keystore.jks
