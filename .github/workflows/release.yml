@@ -45,20 +45,14 @@ jobs:
       - name: Unit tests
         run: flutter test
 
-      - name: Set versionCode from run number
-        run: |
-          # Add a large base offset (10000) so the versionCode is always well above
-          # any code uploaded in early runs or manual uploads.
-          VERSION_CODE=$((GITHUB_RUN_NUMBER + 10000))
-          CURRENT=$(grep '^version:' pubspec.yaml | sed 's/version: //' | cut -d'+' -f1)
-          sed -i "s/^version: .*/version: ${CURRENT}+${VERSION_CODE}/" pubspec.yaml
-          echo "versionCode set to $VERSION_CODE (version: ${CURRENT}+${VERSION_CODE})"
-
       - name: Decode upload keystore
         run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/app/keystore.jks
 
       - name: Build release AAB
-        run: flutter build appbundle --release
+        # --build-number is evaluated by GitHub Actions before the shell runs,
+        # so the versionCode is guaranteed correct regardless of pubspec.yaml.
+        # Offset of 10000 ensures the code is always above any prior manual uploads.
+        run: flutter build appbundle --release --build-number=$(( ${{ github.run_number }} + 10000 ))
         env:
           KEYSTORE_PATH: keystore.jks
           KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS }}
