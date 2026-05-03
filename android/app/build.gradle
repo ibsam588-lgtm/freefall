@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace = "com.corsairlabs.freefall"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 35
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -22,11 +22,12 @@ android {
     defaultConfig {
         applicationId = "com.corsairlabs.freefall"
         // Phase 16: pin the SDK floor + ceiling. Min 21 covers ~99% of
-        // active Android devices; target 34 keeps Play Store eligible.
+        // active Android devices; target 35 is the current Play Store
+        // requirement (was 34 — bumped per Play Console error).
         minSdk = 21
-        targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        targetSdk = 35
+        versionCode = 2
+        versionName = "1.0.1"
     }
 
     signingConfigs {
