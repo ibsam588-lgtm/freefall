@@ -72,15 +72,34 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      # NOTE: PLAY_SERVICE_ACCOUNT_JSON must be set as a GitHub Actions
-      # repository secret before the first tagged release. Until then,
-      # the build + AAB artifact steps still run successfully.
-      - name: Upload to Play Store (Internal track)
-        uses: r0adkll/upload-google-play@v1
-        with:
-          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
-          packageName: com.corsairlabs.freefall
-          releaseFiles: build/app/outputs/bundle/release/app-release.aab
-          track: internal
-          whatsNewDirectory: distribution/whatsnew
-          status: completed
+      - name: Upload to Google Play Internal Testing
+        if: github.ref_type == 'tag'
+        run: |
+          pip install google-api-python-client google-auth --quiet
+          python3 << 'PYEOF'
+          import json, os, sys
+          from googleapiclient.discovery import build
+          from googleapiclient.http import MediaFileUpload
+          from google.oauth2 import service_account
+          service_account_json = os.environ["PLAY_STORE_SERVICE_ACCOUNT_JSON"]
+          creds_dict = json.loads(service_account_json)
+          creds = service_account.Credentials.from_service_account_info(
+              creds_dict, scopes=["https://www.googleapis.com/auth/androidpublisher"]
+          )
+          service = build("androidpublisher", "v3", credentials=creds)
+          package = "com.corsairlabs.freefall"
+          edit = service.edits().insert(body={}, packageName=package).execute()
+          edit_id = edit["id"]
+          aab_path = "build/app/outputs/bundle/release/app-release.aab"
+          media = MediaFileUpload(aab_path, mimetype="application/octet-stream")
+          bundle = service.edits().bundles().upload(packageName=package, editId=edit_id, media_body=media).execute()
+          print(f"Uploaded bundle: {bundle['versionCode']}")
+          service.edits().tracks().update(packageName=package, editId=edit_id, track="internal", body={
+              "track": "internal",
+              "releases": [{"status": "completed", "versionCodes": [str(bundle["versionCode"])]}]
+          }).execute()
+          service.edits().commit(packageName=package, editId=edit_id).execute()
+          print("Successfully published to internal testing")
+          PYEOF
+        env:
+          PLAY_STORE_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_STORE_SERVICE_ACCOUNT_JSON }}
