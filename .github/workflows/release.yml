@@ -81,8 +81,12 @@ jobs:
           from googleapiclient.discovery import build
           from googleapiclient.http import MediaFileUpload
           from google.oauth2 import service_account
-          service_account_json = os.environ["PLAY_STORE_SERVICE_ACCOUNT_JSON"]
-          creds_dict = json.loads(service_account_json)
+          service_account_json = os.environ["PLAY_STORE_SERVICE_ACCOUNT_JSON"].strip()
+          # Handle case where newlines are stored as literal \n in the GitHub secret
+          try:
+              creds_dict = json.loads(service_account_json)
+          except json.JSONDecodeError:
+              creds_dict = json.loads(service_account_json.replace('\\n', '\n'))
           creds = service_account.Credentials.from_service_account_info(
               creds_dict, scopes=["https://www.googleapis.com/auth/androidpublisher"]
           )
