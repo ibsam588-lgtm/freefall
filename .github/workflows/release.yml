@@ -98,7 +98,7 @@ jobs:
               "track": "internal",
               "releases": [{"status": "completed", "versionCodes": [str(bundle["versionCode"])]}]
           }).execute()
-          service.edits().commit(packageName=package, editId=edit_id, changesNotSentForReview=True).execute()
+          service.edits().commit(packageName=package, editId=edit_id).execute()
           print("Successfully published to internal testing")
           PYEOF
         env:
