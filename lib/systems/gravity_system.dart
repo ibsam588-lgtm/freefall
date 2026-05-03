@@ -14,12 +14,12 @@ import 'system_base.dart';
 
 class GravitySystem implements GameSystem {
   /// Downward acceleration (positive y is down in Flame's screen space).
-  static const double gravity = 800; // px/s^2
+  static const double gravity = 560; // px/s^2
 
   /// Hard cap on |velocity.y| — past this we stop accelerating.
   /// WHY: without a cap, long falls accumulate to absurd speeds and
   /// blow past collision swept-volumes between frames.
-  static const double terminalVelocity = 1200; // px/s
+  static const double terminalVelocity = 840; // px/s
 
   /// Per-frame proportional drag. Applied as v -= v * dragCoefficient.
   /// Affects both axes — sideways tilt also damps over time, which

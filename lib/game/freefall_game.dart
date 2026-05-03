@@ -14,6 +14,7 @@ import 'package:flame/components.dart';
 import 'package:flame/game.dart';
 
 import '../components/combo_display.dart';
+import '../components/obstacles/game_obstacle.dart';
 import '../components/floating_text.dart';
 import '../components/hud.dart';
 import '../components/near_miss_detector.dart';
@@ -474,6 +475,42 @@ class FreefallGame extends FlameGame {
     }
 
     super.update(clamped);
+
+    // Clamp player to horizontal screen bounds so the orb never drifts
+    // into the blank areas outside the play column.
+    player.position.x = player.position.x.clamp(
+      Player.radius,
+      logicalWidth - Player.radius,
+    );
+
+    // Obstacle collision pass. Run after super.update so player.position
+    // reflects this frame's physics. Skipped during i-frames so a hit that
+    // already triggered the damage/invincibility cycle can't double-fire.
+    if (player.isAlive && !player.isInvincible) {
+      final hitObstacles = collisionSystem.queryPlayerHits(
+        _playerHitbox(),
+        obstacleManager.activeObstacles,
+      );
+      for (final obstacle in hitObstacles) {
+        final effect = obstacle.onPlayerHit();
+        switch (effect) {
+          case ObstacleHitEffect.kill:
+            // Drain all lives so death triggers immediately.
+            while (player.isAlive) {
+              player.onHit();
+            }
+          case ObstacleHitEffect.damage:
+          case ObstacleHitEffect.stun:
+            player.onHit();
+          case ObstacleHitEffect.boost:
+          case ObstacleHitEffect.none:
+            break;
+        }
+        // A single hit per frame is enough — break after the first
+        // damaging contact so combo collapse fires exactly once.
+        if (!player.isAlive || player.isInvincible) break;
+      }
+    }
   }
 
   /// Phase 9: rebuild a fresh run on the same FreefallGame instance.

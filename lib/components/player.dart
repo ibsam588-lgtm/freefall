@@ -38,10 +38,10 @@ class Player extends PositionComponent {
 
   /// How aggressively device tilt converts to horizontal velocity.
   /// Tuned so a comfortable ~30° tilt produces near-max horizontal speed.
-  static const double tiltSensitivity = 600; // px/s per (m/s^2)
+  static const double tiltSensitivity = 420; // px/s per (m/s^2)
 
   /// Maximum horizontal speed produced by tilt or touch.
-  static const double maxHorizontalSpeed = 600;
+  static const double maxHorizontalSpeed = 420;
 
   /// Default starting and minimum-upgrade life count.
   static const int defaultMaxLives = 3;
