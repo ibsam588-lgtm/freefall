@@ -96,7 +96,7 @@ jobs:
           print(f"Uploaded bundle: {bundle['versionCode']}")
           service.edits().tracks().update(packageName=package, editId=edit_id, track="internal", body={
               "track": "internal",
-              "releases": [{"status": "completed", "versionCodes": [str(bundle["versionCode"])]}]
+              "releases": [{"status": "draft", "versionCodes": [str(bundle["versionCode"])]}]
           }).execute()
           service.edits().commit(packageName=package, editId=edit_id).execute()
           print("Successfully published to internal testing")
