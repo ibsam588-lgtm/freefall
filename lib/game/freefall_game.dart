@@ -9,6 +9,7 @@
 // CameraComponent.withFixedResolution scales to fit the device.
 
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flame/components.dart';
@@ -128,6 +129,13 @@ class FreefallGame extends FlameGame {
   /// Internal: tracks whether [onRunEnded] has been fired for the
   /// current run. Cleared by [restartRun].
   bool _runEnded = false;
+
+  /// Player Y at the start of the current frame (before super.update
+  /// advances physics). Used by [_playerHitbox] to sweep the collision
+  /// rect across the frame's vertical travel — at terminal velocity the
+  /// orb covers ~13px / 60Hz step, which would silently skip a 20px-
+  /// tall platform if we only checked the post-update position.
+  double _prevPlayerY = 0;
 
   /// Phase 10: optional. When set, the game routes in-run signals
   /// (combo, gem, zone, hit, speed gate) into the manager so unlock
@@ -305,6 +313,7 @@ class FreefallGame extends FlameGame {
       particleSystem: playerParticles,
       playWidth: logicalWidth,
     );
+    _prevPlayerY = player.position.y;
     await world.add(player);
 
     // Zone-name flash overlay sits in the camera viewport so it stays
@@ -485,6 +494,11 @@ class FreefallGame extends FlameGame {
       onRunEnded?.call();
     }
 
+    // Snapshot the pre-physics Y so the post-physics collision pass can
+    // sweep the AABB across the frame's vertical travel and not tunnel
+    // through thin platforms.
+    _prevPlayerY = player.position.y;
+
     super.update(clamped);
 
     // Clamp player to horizontal screen bounds so the orb never drifts
@@ -506,10 +520,7 @@ class FreefallGame extends FlameGame {
         final effect = obstacle.onPlayerHit();
         switch (effect) {
           case ObstacleHitEffect.kill:
-            // Drain all lives so death triggers immediately.
-            while (player.isAlive) {
-              player.onHit();
-            }
+            player.kill();
           case ObstacleHitEffect.damage:
           case ObstacleHitEffect.stun:
             player.onHit();
@@ -545,6 +556,7 @@ class FreefallGame extends FlameGame {
     achievementManager?.onRunStarted();
     ghostRunner?.onRunStarted();
     player.respawn();
+    _prevPlayerY = player.position.y;
     // Phase 11: respawn cue + restart the music for the starting zone
     // (Stratosphere). playZoneMusic dedups so a fresh instance whose
     // last music was already Stratosphere stays playing.
@@ -573,16 +585,21 @@ class FreefallGame extends FlameGame {
   /// Total fixed-timestep ticks since startup. Useful for tests.
   int get totalSimSteps => gameLoop.totalSteps;
 
-  /// World-space AABB of the player orb. Recomputed each frame; used
-  /// by Phase-6 near-miss detection. Anchored at the player's center
-  /// (Player.anchor == Anchor.center), so we offset by the radius.
+  /// World-space AABB of the player orb, swept across this frame's
+  /// vertical travel so a fast-falling orb can't tunnel through a thin
+  /// (20px) platform between physics steps. The horizontal extent stays
+  /// at the orb radius — lateral travel per frame is small relative to
+  /// the orb diameter so a horizontal sweep would just inflate false
+  /// positives in near-miss detection.
   Rect _playerHitbox() {
     const r = Player.radius;
-    return Rect.fromLTWH(
+    final topY = math.min(player.position.y, _prevPlayerY) - r;
+    final bottomY = math.max(player.position.y, _prevPlayerY) + r;
+    return Rect.fromLTRB(
       player.position.x - r,
-      player.position.y - r,
-      r * 2,
-      r * 2,
+      topY,
+      player.position.x + r,
+      bottomY,
     );
   }
 }

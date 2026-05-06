@@ -192,16 +192,18 @@ void main() {
     });
 
     test('coin costs match the spec', () {
+      // All non-default skins fit under the 200-coin store ceiling.
+      // Tier ordering (cheap → premium) is preserved across the catalog.
       Map<SkinId, int> expected = {
         SkinId.defaultOrb: 0,
         SkinId.fire: 100,
         SkinId.ice: 100,
-        SkinId.electric: 250,
-        SkinId.shadow: 250,
-        SkinId.rainbow: 500,
-        SkinId.neon: 500,
-        SkinId.void_: 1000,
-        SkinId.golden: 1000,
+        SkinId.electric: 150,
+        SkinId.shadow: 150,
+        SkinId.rainbow: 200,
+        SkinId.neon: 200,
+        SkinId.void_: 200,
+        SkinId.golden: 200,
       };
       for (final entry in expected.entries) {
         expect(PlayerSkin.byId(entry.key).coinCost, entry.value,
@@ -232,14 +234,15 @@ void main() {
 
   group('TrailEffect catalog', () {
     test('contains all 7 trail ids with matching costs', () {
+      // Same flat 200-coin ceiling as the skin catalog.
       final expected = {
         TrailId.default_: 0,
         TrailId.comet: 100,
-        TrailId.helix: 250,
-        TrailId.sparkle: 250,
-        TrailId.glitch: 500,
-        TrailId.ghost: 500,
-        TrailId.warp: 1000,
+        TrailId.helix: 150,
+        TrailId.sparkle: 150,
+        TrailId.glitch: 200,
+        TrailId.ghost: 200,
+        TrailId.warp: 200,
       };
       expect(TrailEffect.catalog, hasLength(7));
       for (final entry in expected.entries) {

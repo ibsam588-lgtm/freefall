@@ -262,7 +262,7 @@ void main() {
       final ctx = _build(seedCoins: 5000);
       final id = StoreInventory.upgradeIdOf(PowerupUpgradeId.magnetRange);
       final upgrade = PowerupUpgrade.byId(PowerupUpgradeId.magnetRange);
-      // Costs: 200, 500, 1000.
+      // Costs come from the catalog — flat 100 / 150 / 200 ramp.
       await ctx.repo.purchaseUpgrade(id);
       expect(await ctx.coin.getBalance(), 5000 - upgrade.costPerLevel[0]);
       await ctx.repo.purchaseUpgrade(id);
@@ -279,10 +279,10 @@ void main() {
     });
 
     test('throws InsufficientCoinsException when broke mid-ladder', () async {
-      final ctx = _build(seedCoins: 250);
+      // Seed enough for Level 1 (100) but short of Level 2 (150).
+      final ctx = _build(seedCoins: 100);
       final id = StoreInventory.upgradeIdOf(PowerupUpgradeId.magnetRange);
 
-      // Level 1 (200 coins) lands; Level 2 (500 coins) is too expensive.
       await ctx.repo.purchaseUpgrade(id);
       expect(await ctx.repo.getUpgradeLevel(id), 1);
       expect(

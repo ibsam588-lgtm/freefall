@@ -226,6 +226,10 @@ class Player extends PositionComponent {
     super.onLoad();
     _subscribeAccelerometer();
 
+    // The trail renderer is intentionally NOT added as a child component:
+    // Flame renders children *after* the parent, which would put the
+    // trail on top of the orb. We own its update/render manually inside
+    // [update]/[render] so we can draw the trail behind the orb body.
     trailRenderer = PlayerTrail(
       effect: trail,
       color: skin.trailColor,
@@ -233,7 +237,6 @@ class Player extends PositionComponent {
       positionProvider: () => position,
       radiusProvider: () => radius,
     );
-    add(trailRenderer);
   }
 
   @override
@@ -282,6 +285,20 @@ class Player extends PositionComponent {
 
   /// Backwards-compatible alias for [onHit].
   bool hit() => onHit();
+
+  /// Force a fatal hit. Bypasses i-frames and drains all lives in one
+  /// step, then triggers the death sequence. Used by lethal hazards
+  /// (lightning, stalactite) — the per-frame [onHit] loop they used to
+  /// run hung the game whenever a non-fatal first hit set i-frames,
+  /// because subsequent [onHit] calls then no-op'd while [isAlive]
+  /// stayed true.
+  void kill() {
+    if (!isAlive) return;
+    _lives = 0;
+    _invincibleTimer = 0;
+    _triggerDeath();
+    onHitCallback?.call();
+  }
 
   void _triggerDeath() {
     _isDeadState = true;
@@ -334,6 +351,13 @@ class Player extends PositionComponent {
     _stepTrail();
     _stepInvincibility(dt);
     _stepFallbackParticles(dt);
+    // Drive the trail's animation phase ourselves since it's no longer
+    // attached as a child component (see onLoad). Guarded so headless
+    // unit tests that drive update() without going through onLoad don't
+    // hit a LateInitializationError.
+    if (isMounted) {
+      trailRenderer.update(dt);
+    }
   }
 
   void _stepPhysics(double dt) {
@@ -395,8 +419,13 @@ class Player extends PositionComponent {
     final cy = size.y / 2;
     final center = Offset(cx, cy);
 
-    // Trail draws first so the orb sits on top.
-    // (PlayerTrail is a child component; Flame renders it for us.)
+    // Trail draws first so the orb sits on top of it. Rendering the
+    // trail manually here (instead of as a child component) is the
+    // only way to get the trail BEHIND the orb — Flame's renderTree
+    // unconditionally draws children after the parent.
+    if (isMounted) {
+      trailRenderer.render(canvas);
+    }
 
     if (isAlive) {
       _renderWindLines(canvas, center);

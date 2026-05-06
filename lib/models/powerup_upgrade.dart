@@ -64,12 +64,18 @@ class PowerupUpgrade {
   /// Default-locked catalog. Every upgrade starts at level 0 in
   /// StoreRepository — the entries below describe how each level moves
   /// the underlying gameplay number.
+  ///
+  /// Pricing: every level fits under the 200-coin store ceiling. We
+  /// keep a flat 100 / 150 / 200 ramp across all upgrades so a player
+  /// can plan around a known budget rather than tier-chasing the
+  /// expensive ones. The effect values are unchanged — only the cost
+  /// curve was flattened.
   static const List<PowerupUpgrade> catalog = [
     PowerupUpgrade(
       id: PowerupUpgradeId.magnetRange,
       name: 'Magnet Range',
       description: 'Larger pickup radius when the magnet powerup is active.',
-      costPerLevel: [200, 500, 1000],
+      costPerLevel: [100, 150, 200],
       // Base 150px (slightly under the 200px Phase-5 default so level 1
       // is a real upgrade, not a sidegrade).
       valuePerLevel: [150, 200, 250, 300],
@@ -79,7 +85,7 @@ class PowerupUpgrade {
       id: PowerupUpgradeId.shieldDuration,
       name: 'Shield Duration',
       description: 'Shield i-frames last longer per hit.',
-      costPerLevel: [150, 400, 800],
+      costPerLevel: [100, 150, 200],
       // Base 2s (the Phase-4 i-frame default), +1s/level.
       valuePerLevel: [2.0, 3.0, 4.0, 5.0],
       unit: 's',
@@ -88,7 +94,7 @@ class PowerupUpgrade {
       id: PowerupUpgradeId.slowMoDuration,
       name: 'Slow-Mo Duration',
       description: 'Slow-mo lasts longer once activated.',
-      costPerLevel: [200, 500, 1000],
+      costPerLevel: [100, 150, 200],
       // Base 5s (Phase-5 default), +1.5s/level.
       valuePerLevel: [5.0, 6.5, 8.0, 9.5],
       unit: 's',
@@ -97,7 +103,7 @@ class PowerupUpgrade {
       id: PowerupUpgradeId.scoreMultiplier,
       name: 'Score Multiplier',
       description: 'Higher score multiplier on every run.',
-      costPerLevel: [300, 800, 1500],
+      costPerLevel: [100, 150, 200],
       // Base 1.0×, +0.2/level.
       valuePerLevel: [1.0, 1.2, 1.4, 1.6],
       unit: 'x',
@@ -106,7 +112,7 @@ class PowerupUpgrade {
       id: PowerupUpgradeId.coinMultiplier,
       name: 'Coin Multiplier',
       description: 'Higher coin multiplier on every run.',
-      costPerLevel: [300, 800, 1500],
+      costPerLevel: [100, 150, 200],
       valuePerLevel: [1.0, 1.2, 1.4, 1.6],
       unit: 'x',
     ),
@@ -114,7 +120,7 @@ class PowerupUpgrade {
       id: PowerupUpgradeId.extraStartingLife,
       name: 'Extra Starting Life',
       description: 'Begin each run with extra lives.',
-      costPerLevel: [500, 1200, 2500],
+      costPerLevel: [100, 150, 200],
       // Whole-number bonus lives. Player.absoluteMaxLives is 4 so the
       // upgrade caps at +1 base life worth — Phase 8 grants the bonus
       // through the regular life pipeline (capped at the absolute max).
@@ -125,7 +131,7 @@ class PowerupUpgrade {
       id: PowerupUpgradeId.luckyDrop,
       name: 'Lucky Drop',
       description: 'Higher gem spawn rate while you fall.',
-      costPerLevel: [400, 1000, 2000],
+      costPerLevel: [100, 150, 200],
       // Base spawn-rate scalar 1.0 (gems land at the Phase-5 default).
       valuePerLevel: [1.0, 1.25, 1.5, 2.0],
       unit: 'x gems',

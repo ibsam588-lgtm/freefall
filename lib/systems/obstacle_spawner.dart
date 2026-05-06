@@ -109,6 +109,12 @@ class ObstacleSpawner implements GameSystem {
   /// minGapWallSeparation rule.
   double _lastGapWallY = -1e9;
 
+  /// Running count of lightning bolts spawned in this run. Used by the
+  /// lightning pattern rule below — every spawn is placed in the next
+  /// column of a deterministic 3-step cycle so the player can learn it
+  /// instead of guessing.
+  int _lightningSpawnCount = 0;
+
   int _idCounter = 0;
 
   /// Per-zone spawn allowlist with weights. Tuned so each zone has a
@@ -177,6 +183,7 @@ class ObstacleSpawner implements GameSystem {
   void reset() {
     _nextSpawnY = viewportHeight;
     _lastGapWallY = -1e9;
+    _lightningSpawnCount = 0;
     _idCounter = 0;
   }
 
@@ -313,10 +320,28 @@ class ObstacleSpawner implements GameSystem {
           worldPosition: Vector2(pickX, atY),
         );
       case ObstacleKind.lightningBolt:
+        // Lightning pattern (intentionally learnable):
+        //   1. Each bolt lands in one of three fixed columns —
+        //      left (1/4), center (1/2), or right (3/4) of the play
+        //      column. The column cycles strictly L → C → R → L → …
+        //      so a player who has seen two bolts can predict the next.
+        //   2. The flash phase is locked to the column too: column 0
+        //      flashes at phase 0 (active immediately), column 1 at
+        //      flashDuration (just-cooled), column 2 mid-cooldown.
+        //      That makes the rhythm "L flashes, C primes, R cools"
+        //      and repeats — same shape every time, regardless of RNG.
+        // Random per-bolt placement was the previous behavior; it
+        // produced legal but unreadable thunderstorms.
+        final col = _lightningSpawnCount % 3;
+        _lightningSpawnCount++;
+        final colX = playWidth * (0.25 + 0.25 * col);
+        const cycle =
+            LightningBolt.flashDuration + LightningBolt.cooldownDuration;
+        final phase = (col / 3.0) * cycle;
         return LightningBolt(
           obstacleId: id,
-          worldPosition: Vector2(pickX, atY),
-          rng: rng,
+          worldPosition: Vector2(colX, atY),
+          initialPhase: phase,
         );
       case ObstacleKind.wreckingBall:
         return WreckingBall(
