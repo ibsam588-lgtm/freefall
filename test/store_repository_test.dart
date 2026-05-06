@@ -122,8 +122,8 @@ void main() {
           id, PlayerSkin.byId(SkinId.fire).coinCost);
       expect(result, PurchaseResult.purchased);
       expect(await ctx.repo.isOwned(id), isTrue);
-      // 500 - 300 (fire skin cost) = 200 remaining.
-      expect(await ctx.coin.getBalance(), 200);
+      // 500 - 100 (fire skin cost) = 400 remaining.
+      expect(await ctx.coin.getBalance(), 400);
     });
 
     test('throws InsufficientCoinsException when broke', () async {

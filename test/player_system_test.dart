@@ -194,14 +194,14 @@ void main() {
     test('coin costs match the spec', () {
       Map<SkinId, int> expected = {
         SkinId.defaultOrb: 0,
-        SkinId.fire: 300,
-        SkinId.ice: 300,
-        SkinId.electric: 500,
-        SkinId.shadow: 800,
-        SkinId.rainbow: 1500,
-        SkinId.neon: 1500,
-        SkinId.void_: 3000,
-        SkinId.golden: 5000,
+        SkinId.fire: 100,
+        SkinId.ice: 100,
+        SkinId.electric: 250,
+        SkinId.shadow: 250,
+        SkinId.rainbow: 500,
+        SkinId.neon: 500,
+        SkinId.void_: 1000,
+        SkinId.golden: 1000,
       };
       for (final entry in expected.entries) {
         expect(PlayerSkin.byId(entry.key).coinCost, entry.value,
@@ -234,12 +234,12 @@ void main() {
     test('contains all 7 trail ids with matching costs', () {
       final expected = {
         TrailId.default_: 0,
-        TrailId.comet: 300,
-        TrailId.helix: 500,
-        TrailId.sparkle: 800,
-        TrailId.glitch: 1000,
-        TrailId.ghost: 1000,
-        TrailId.warp: 1500,
+        TrailId.comet: 100,
+        TrailId.helix: 250,
+        TrailId.sparkle: 250,
+        TrailId.glitch: 500,
+        TrailId.ghost: 500,
+        TrailId.warp: 1000,
       };
       expect(TrailEffect.catalog, hasLength(7));
       for (final entry in expected.entries) {
