@@ -3,16 +3,18 @@
 // Flutter shell that hosts the FreefallGame instance and the two
 // gameplay overlays:
 //
-//  * PauseScreen — shown on back-button press while alive. Routes to
-//    Resume / Restart / Settings / Quit.
-//  * RunSummaryScreen — shown the moment the player dies. Resolves the
-//    run's RunStats, persists lifetime counters via StatsRepository,
-//    and offers Revive / Play Again / 2× coins.
+//  * PauseScreen — shown on back-button press while alive.
+//  * RunSummaryScreen — shown after crash effects play out.
 //
-// The FreefallGame instance is built once in initState and reused
-// across runs (Player.respawn + game.restartRun rebuild the world
-// without rebuilding Flame). Engine pause/resume goes through
-// game.pauseEngine / resumeEngine so physics also stops.
+// Crash impact effects (screen flash, camera shake, BOOM text) are
+// Flutter-level overlays — they sit on top of the GameWidget so no
+// Flame changes are needed.
+//
+// Equipped skin/trail are applied to the player once the game has
+// finished its async onLoad via game.whenLoaded.
+
+import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
@@ -23,6 +25,7 @@ import '../components/achievement_popup.dart';
 import '../game/freefall_game.dart';
 import '../models/achievement.dart';
 import '../models/player_skin.dart';
+import '../models/trail_effect.dart';
 import '../services/google_play_games_stub.dart';
 import '../systems/achievement_manager.dart';
 import 'pause_screen.dart';
@@ -35,40 +38,42 @@ class GameScreen extends StatefulWidget {
   State<GameScreen> createState() => _GameScreenState();
 }
 
-class _GameScreenState extends State<GameScreen> {
+class _GameScreenState extends State<GameScreen>
+    with TickerProviderStateMixin {
   late final FreefallGame _game;
   final AchievementPopupController _popupController =
       AchievementPopupController();
 
+  // ---- crash-effect state -------------------------------------------------
+
+  late final AnimationController _flashController;
+  Timer? _shakeTimer;
+  Offset _shakeOffset = Offset.zero;
+  bool _showBoom = false;
+
+  // ---- screen state -------------------------------------------------------
+
   bool _paused = false;
   bool _showSummary = false;
 
-  /// Cached so we can re-wire achievement callbacks once dependencies
-  /// resolve in didChangeDependencies (the first build is when
-  /// AppDependencies is reachable).
   AchievementManager? _achievementManager;
-
-  /// Phase 13: equipped skin pulled from the StoreRepository. Used to
-  /// tint the share-image orb. Defaults to the default skin so the
-  /// summary screen renders even before the async lookup lands.
   SkinId _equippedSkinForShare = SkinId.defaultOrb;
 
   @override
   void initState() {
     super.initState();
     _game = FreefallGame();
-    // Wire the run-end hook now so death triggers the summary even
-    // if it lands before the first build (e.g. a debug warp-to-death).
     _game.onRunEnded = _onRunEnded;
+
+    _flashController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 350),
+    );
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Wire the achievement manager into the game's signal hooks once
-    // the InheritedWidget is available. didChangeDependencies fires
-    // before the first build, so the player will see popups even on
-    // their very first run.
     final deps = AppDependencies.of(context);
     final mgr = deps.achievementManager;
     if (identical(mgr, _achievementManager)) return;
@@ -78,29 +83,64 @@ class _GameScreenState extends State<GameScreen> {
     _game.achievementManager = mgr;
     _game.ghostRunner = deps.ghostRunner;
     _game.audio = deps.audioService;
-    // Phase 14: hand the shared monitor to the game so frame dts and
-    // the visual budgets stay in sync across runs (the monitor is
-    // app-scoped so a slow first-run keeps adapting on the second).
     _game.performanceMonitor = deps.performanceMonitor;
     _game.analytics = deps.analytics;
-    // Mirror the latest settings into the audio service so a player
-    // who muted between runs doesn't hear the next session.
     deps.audioService.syncFromSettings(deps.settings);
     deps.ghostRunner.onRunStarted();
-    // Phase 13: snapshot the equipped skin once for the share card.
-    // Async — fire-and-forget; defaults stand in until the lookup
-    // resolves.
-    _resolveEquippedSkin(deps);
+    _resolveEquippedCosmetics(deps);
   }
 
-  Future<void> _resolveEquippedSkin(AppDependencies deps) async {
-    final skin = await deps.storeRepo.getEquippedSkin();
+  /// Read the equipped skin + trail and apply them to the player once
+  /// the game's async onLoad has completed.
+  Future<void> _resolveEquippedCosmetics(AppDependencies deps) async {
+    final skinId = await deps.storeRepo.getEquippedSkin();
+    final trailId = await deps.storeRepo.getEquippedTrail();
     if (!mounted) return;
-    setState(() => _equippedSkinForShare = skin);
+    setState(() => _equippedSkinForShare = skinId);
+    await _game.whenLoaded;
+    if (!mounted) return;
+    _game.player.setSkin(PlayerSkin.byId(skinId));
+    _game.player.setTrail(TrailEffect.byId(trailId));
   }
 
   void _onAchievementUnlocked(Achievement ach) {
     _popupController.enqueue(ach);
+  }
+
+  // ---- crash effects -------------------------------------------------------
+
+  void _startCrashEffects() {
+    if (!mounted) return;
+
+    // White screen flash that fades over 350 ms.
+    _flashController.forward(from: 0);
+
+    // Camera shake: random offset decaying to zero over ~500 ms.
+    int frames = 0;
+    const int maxFrames = 15;
+    final rng = math.Random();
+    _shakeTimer?.cancel();
+    _shakeTimer = Timer.periodic(const Duration(milliseconds: 33), (t) {
+      if (!mounted || frames >= maxFrames) {
+        t.cancel();
+        if (mounted) setState(() => _shakeOffset = Offset.zero);
+        return;
+      }
+      frames++;
+      final decay = 1 - frames / maxFrames;
+      setState(() {
+        _shakeOffset = Offset(
+          (rng.nextDouble() - 0.5) * 14 * decay,
+          (rng.nextDouble() - 0.5) * 8 * decay,
+        );
+      });
+    });
+
+    // "BOOM!" text visible for 500 ms.
+    setState(() => _showBoom = true);
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (mounted) setState(() => _showBoom = false);
+    });
   }
 
   // ---- pause flow ---------------------------------------------------------
@@ -111,49 +151,40 @@ class _GameScreenState extends State<GameScreen> {
       if (paused) {
         _game.pauseEngine();
       } else if (!_showSummary) {
-        // Don't resume if the summary is up — that's a different state.
         _game.resumeEngine();
       }
     });
   }
 
   Future<bool> _handleBackPressed() async {
-    if (_showSummary) {
-      // While the summary is up, back == quit to menu.
-      return true;
-    }
-    if (_paused) return true; // already paused — allow exit.
+    if (_showSummary) return true;
+    if (_paused) return true;
     _setPaused(true);
     return false;
   }
 
   Future<void> _openSettings() async {
     await Navigator.of(context).pushNamed(AppRoutes.settings);
-    if (!mounted) return;
-    // After returning from Settings, stay paused — the player will
-    // tap Resume explicitly.
   }
 
   // ---- run flow -----------------------------------------------------------
 
   void _onRunEnded() {
     if (!mounted) return;
-    setState(() => _showSummary = true);
-    // Pause the engine so the death animation freezes behind the
-    // summary card; the player resumes a fresh run via Play Again.
-    _game.pauseEngine();
-    // Fire-and-forget the lifetime stats persistence so the summary
-    // shows the resolved isNewHighScore flag.
+    _startCrashEffects();
     _persistRunStats();
+    // Show summary after crash effects have played.
+    Future.delayed(const Duration(milliseconds: 700), () {
+      if (!mounted) return;
+      setState(() => _showSummary = true);
+      _game.pauseEngine();
+    });
   }
 
   Future<void> _persistRunStats() async {
     final deps = AppDependencies.of(context);
     final raw = _game.scoreManager.snapshot(isNewHighScore: false);
     final resolved = await deps.statsRepo.updateAfterRun(raw);
-    // Phase 10: feed the resolved run into the achievement manager so
-    // lifetime + best-of-run unlocks can fire from the summary screen.
-    // Persisted by syncExternals so coin/near-miss totals stay current.
     await deps.achievementManager.updateFromRunStats(resolved, deps.statsRepo);
     final coinBalance = await deps.coinRepo.getLifetimeEarned();
     final streak = await deps.loginRepo.getConsecutiveDays();
@@ -161,42 +192,22 @@ class _GameScreenState extends State<GameScreen> {
       lifetimeCoins: coinBalance,
       consecutiveDays: streak,
     );
-    // Phase 10: persist the new best-run ghost iff the score beat the
-    // previous best.
     await deps.ghostRunner.maybeSaveBestRun(resolved.score);
-    // Phase 13: submit both score and depth to their respective Play
-    // Games / Game Center leaderboards. The service no-ops when the
-    // user is offline / not signed in so this stays fire-and-forget.
     await deps.gameServices.submitScore(
       leaderboardId: GooglePlayGamesService.bestScoreLeaderboardId,
       score: resolved.score,
     );
     await deps.gameServices.submitDepthScore(resolved.depthMeters);
-    // Phase 11: stop the in-game music and play the new-high fanfare
-    // if the run beat the previous record. We stop music regardless
-    // so the summary screen isn't drowned out by a zone loop.
     await deps.audioService.stopMusic();
     if (resolved.isNewHighScore) {
       deps.audioService.playNewHighScore();
     }
-    // Phase 12: poke the interstitial counter. The service handles
-    // the every-3rd-game-over pacing + the no-ads short-circuit, so
-    // the call site stays a one-liner.
     await deps.adService.showInterstitialAd();
-    // Phase 14: log the resolved run to analytics. Fire-and-forget;
-    // the no-op base service swallows the call when Firebase isn't
-    // booted.
     await deps.analytics.logRunCompleted(resolved);
     if (!mounted) return;
-    setState(() {
-      // Stash the resolved stats so the summary widget rebuilds with
-      // the correct isNewHighScore flag.
-      _resolvedStats = resolved;
-    });
+    setState(() => _resolvedStats = resolved);
   }
 
-  /// Resolved run stats from StatsRepository. Null until the async
-  /// update lands — we render a thin loading scrim in the meantime.
   dynamic _resolvedStats;
 
   void _restartRun() {
@@ -208,10 +219,15 @@ class _GameScreenState extends State<GameScreen> {
     _achievementManager?.onRunStarted();
     _game.restartRun();
     _game.resumeEngine();
+    // Re-apply equipped cosmetics for the new run.
+    final deps = AppDependencies.of(context);
+    _resolveEquippedCosmetics(deps);
   }
 
   @override
   void dispose() {
+    _flashController.dispose();
+    _shakeTimer?.cancel();
     _popupController.dispose();
     super.dispose();
   }
@@ -228,15 +244,55 @@ class _GameScreenState extends State<GameScreen> {
     return PopScope(
       canPop: _paused || _showSummary,
       onPopInvokedWithResult: (didPop, result) async {
-        if (!didPop) {
-          await _handleBackPressed();
-        }
+        if (!didPop) await _handleBackPressed();
       },
       child: Scaffold(
         backgroundColor: Colors.black,
         body: Stack(
           children: [
-            GameWidget<FreefallGame>(game: _game),
+            // Game canvas with camera-shake offset.
+            Transform.translate(
+              offset: _shakeOffset,
+              child: GameWidget<FreefallGame>(game: _game),
+            ),
+
+            // Screen flash — white overlay animating from opacity 0.7 to 0.
+            if (_flashController.isAnimating || _flashController.value > 0)
+              AnimatedBuilder(
+                animation: _flashController,
+                builder: (_, __) => IgnorePointer(
+                  child: Container(
+                    color: Colors.white.withValues(
+                      alpha: (1 - _flashController.value) * 0.7,
+                    ),
+                  ),
+                ),
+              ),
+
+            // BOOM text.
+            if (_showBoom)
+              const Positioned.fill(
+                child: IgnorePointer(
+                  child: Center(
+                    child: Text(
+                      'BOOM!',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 56,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 4,
+                        shadows: [
+                          Shadow(
+                              color: Color(0xFFFF4500), blurRadius: 24),
+                          Shadow(
+                              color: Color(0xFFFFD700), blurRadius: 48),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
             if (_paused && !_showSummary)
               PauseScreen(
                 onResume: () => _setPaused(false),
@@ -244,6 +300,7 @@ class _GameScreenState extends State<GameScreen> {
                 onOpenSettings: _openSettings,
                 onQuit: _quitToMenu,
               ),
+
             if (_showSummary)
               RunSummaryScreen(
                 stats: _resolvedStats ??
@@ -253,17 +310,9 @@ class _GameScreenState extends State<GameScreen> {
                 shareService: deps.shareService,
                 equippedSkin: _equippedSkinForShare,
                 onPlayAgain: _restartRun,
-                onRevive: () {
-                  // Phase-9 minimal revive: restart the run. A "true"
-                  // revive that resumes mid-fall lands when the live
-                  // continue-from-checkpoint state machine ships.
-                  _restartRun();
-                },
+                onRevive: _restartRun,
               ),
-            // Phase 10: achievement popup overlay rides above the
-            // game canvas but below pause/summary so unlocks stay
-            // visible mid-run and freeze in place when the game is
-            // paused.
+
             AchievementPopupOverlay(controller: _popupController),
           ],
         ),

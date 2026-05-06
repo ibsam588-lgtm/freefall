@@ -50,7 +50,7 @@ class TrailEffect {
     TrailEffect(
       id: TrailId.comet,
       name: 'Comet',
-      coinCost: 300,
+      coinCost: 100,
       sampleCount: 20,
       headAlpha: 0.85,
       animated: false,
@@ -58,7 +58,7 @@ class TrailEffect {
     TrailEffect(
       id: TrailId.helix,
       name: 'Helix',
-      coinCost: 500,
+      coinCost: 250,
       sampleCount: 24,
       headAlpha: 0.7,
       animated: true,
@@ -66,7 +66,7 @@ class TrailEffect {
     TrailEffect(
       id: TrailId.sparkle,
       name: 'Sparkle',
-      coinCost: 800,
+      coinCost: 250,
       sampleCount: 10,
       headAlpha: 0.9,
       animated: true,
@@ -74,7 +74,7 @@ class TrailEffect {
     TrailEffect(
       id: TrailId.glitch,
       name: 'Glitch',
-      coinCost: 1000,
+      coinCost: 500,
       sampleCount: 14,
       headAlpha: 0.7,
       animated: true,
@@ -82,7 +82,7 @@ class TrailEffect {
     TrailEffect(
       id: TrailId.ghost,
       name: 'Ghost',
-      coinCost: 1000,
+      coinCost: 500,
       sampleCount: 12,
       headAlpha: 0.4,
       animated: false,
@@ -90,7 +90,7 @@ class TrailEffect {
     TrailEffect(
       id: TrailId.warp,
       name: 'Warp',
-      coinCost: 1500,
+      coinCost: 1000,
       sampleCount: 18,
       headAlpha: 0.75,
       animated: false,

@@ -8,6 +8,7 @@
 // Every gameplay constant is authored against this — Flame's
 // CameraComponent.withFixedResolution scales to fit the device.
 
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flame/components.dart';
@@ -153,6 +154,13 @@ class FreefallGame extends FlameGame {
   /// `zone_reached` events on each zone crossing.
   AnalyticsService? analytics;
 
+  /// Completes when [onLoad] finishes. Awaited by GameScreen to apply
+  /// the equipped skin/trail before the first frame renders.
+  final Completer<void> _loadCompleter = Completer<void>();
+
+  /// Future that resolves once the game has finished loading.
+  Future<void> get whenLoaded => _loadCompleter.future;
+
   /// Elapsed run time in seconds — driven from [update]. Used by the
   /// ghost runner for sample timestamps; reset on [restartRun].
   double _runElapsed = 0;
@@ -295,6 +303,7 @@ class FreefallGame extends FlameGame {
       gravity: gravitySystem,
       startPosition: Vector2(logicalWidth / 2, 120),
       particleSystem: playerParticles,
+      playWidth: logicalWidth,
     );
     await world.add(player);
 
@@ -376,6 +385,8 @@ class FreefallGame extends FlameGame {
     // under gravity — the camera tags along, and CameraSystem's
     // currentDepthMeters reads as "depth fallen".
     camera.follow(player, snap: true);
+
+    _loadCompleter.complete();
   }
 
   @override

@@ -49,7 +49,7 @@ class PlayerSkin {
       primaryColor: Color(0xFFFF6A00),
       glowColor: Color(0xFFFFB347),
       trailColor: Color(0xFFFF3D00),
-      coinCost: 300,
+      coinCost: 100,
     ),
     PlayerSkin(
       id: SkinId.ice,
@@ -57,7 +57,7 @@ class PlayerSkin {
       primaryColor: Color(0xFFB3E5FC),
       glowColor: Color(0xFF40E0D0),
       trailColor: Color(0xFF80DEEA),
-      coinCost: 300,
+      coinCost: 100,
     ),
     PlayerSkin(
       id: SkinId.electric,
@@ -65,7 +65,7 @@ class PlayerSkin {
       primaryColor: Color(0xFFFFFF66),
       glowColor: Color(0xFFFFEB3B),
       trailColor: Color(0xFF82B1FF),
-      coinCost: 500,
+      coinCost: 250,
     ),
     PlayerSkin(
       id: SkinId.shadow,
@@ -73,7 +73,7 @@ class PlayerSkin {
       primaryColor: Color(0xFF2A2A3A),
       glowColor: Color(0xFF6A1B9A),
       trailColor: Color(0xFF4A148C),
-      coinCost: 800,
+      coinCost: 250,
     ),
     PlayerSkin(
       id: SkinId.rainbow,
@@ -81,7 +81,7 @@ class PlayerSkin {
       primaryColor: Color(0xFFFF4081),
       glowColor: Color(0xFFE040FB),
       trailColor: Color(0xFF40C4FF),
-      coinCost: 1500,
+      coinCost: 500,
     ),
     PlayerSkin(
       id: SkinId.neon,
@@ -89,7 +89,7 @@ class PlayerSkin {
       primaryColor: Color(0xFF39FF14),
       glowColor: Color(0xFFCCFF00),
       trailColor: Color(0xFFFF00E5),
-      coinCost: 1500,
+      coinCost: 500,
     ),
     PlayerSkin(
       id: SkinId.void_,
@@ -97,7 +97,7 @@ class PlayerSkin {
       primaryColor: Color(0xFF0A0A14),
       glowColor: Color(0xFF7B1FA2),
       trailColor: Color(0xFF311B92),
-      coinCost: 3000,
+      coinCost: 1000,
     ),
     PlayerSkin(
       id: SkinId.golden,
@@ -105,7 +105,7 @@ class PlayerSkin {
       primaryColor: Color(0xFFFFD700),
       glowColor: Color(0xFFFFC107),
       trailColor: Color(0xFFFFAB00),
-      coinCost: 5000,
+      coinCost: 1000,
     ),
   ];
 

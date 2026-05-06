@@ -1,34 +1,28 @@
 // screens/main_menu_screen.dart
 //
-// First screen the player sees after the splash. Animates a falling
-// orb behind a "FREEFALL" wordmark + a stack of CTAs (Play, Store,
-// Stats, Settings, Leaderboard). The animated background is a tiny
-// custom painter — full ZoneBackground requires a CameraSystem and
-// is overkill for an idle title screen.
-//
-// Side effects on first frame:
-//   * If the daily-login claim is available, push the login overlay.
-//   * Subscribe to coinRepository.balanceStream so the top-right pill
-//     updates the moment the player claims a bonus.
-//
-// Routing:
-//   * Play → GameScreen (existing).
-//   * Settings → SettingsScreen.
-//   * Store / Stats / Leaderboard are stubbed for later phases — they
-//     show a brief "Coming soon" snackbar so the buttons aren't dead
-//     on tap.
+// Home screen. Modern mobile-game aesthetic:
+//   * Deep-space dark gradient background with multiple animated falling orbs.
+//   * Glowing FREEFALL title with a pulsing neon PLAY button.
+//   * Prominent high-score display.
+//   * Glassmorphism bottom nav row (Store / Leaderboard / Settings).
+//   * Sound toggle in the top bar.
+//   * AdMob banner at the very bottom.
 
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
 import '../app/app_dependencies.dart';
 import '../app/app_routes.dart';
+import '../components/banner_ad_widget.dart';
 import '../models/powerup_upgrade.dart';
 import '../repositories/coin_repository.dart';
 import '../repositories/daily_login_repository.dart';
+import '../repositories/stats_repository.dart';
 import '../repositories/store_repository.dart';
+import '../services/audio_service.dart';
 import '../services/settings_service.dart';
 import 'daily_login_screen.dart';
 
@@ -37,6 +31,8 @@ class MainMenuScreen extends StatefulWidget {
   final DailyLoginRepository loginRepo;
   final StoreRepository storeRepo;
   final SettingsService settings;
+  final StatsRepository statsRepo;
+  final AudioService audioService;
 
   const MainMenuScreen({
     super.key,
@@ -44,6 +40,8 @@ class MainMenuScreen extends StatefulWidget {
     required this.loginRepo,
     required this.storeRepo,
     required this.settings,
+    required this.statsRepo,
+    required this.audioService,
   });
 
   @override
@@ -51,12 +49,15 @@ class MainMenuScreen extends StatefulWidget {
 }
 
 class _MainMenuScreenState extends State<MainMenuScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late final AnimationController _bgController;
+  late final AnimationController _pulseController;
   StreamSubscription<int>? _balanceSub;
 
   int _coinBalance = 0;
   int _streak = 0;
+  int _highScore = 0;
+  bool _soundEnabled = true;
   bool _loginOverlayShown = false;
 
   @override
@@ -64,18 +65,33 @@ class _MainMenuScreenState extends State<MainMenuScreen>
     super.initState();
     _bgController = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 8),
+      duration: const Duration(seconds: 10),
     )..repeat();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    )..repeat(reverse: true);
+    _soundEnabled = widget.settings.soundEnabled;
     _bootstrap();
+  }
+
+  @override
+  void dispose() {
+    _bgController.dispose();
+    _pulseController.dispose();
+    _balanceSub?.cancel();
+    super.dispose();
   }
 
   Future<void> _bootstrap() async {
     final balance = await widget.coinRepo.getBalance();
     final streak = await widget.loginRepo.getConsecutiveDays();
+    final highScore = await widget.statsRepo.getHighScore();
     if (!mounted) return;
     setState(() {
       _coinBalance = balance;
       _streak = streak;
+      _highScore = highScore;
     });
 
     _balanceSub = widget.coinRepo.balanceStream.listen((next) {
@@ -83,10 +99,6 @@ class _MainMenuScreenState extends State<MainMenuScreen>
       setState(() => _coinBalance = next);
     });
 
-    // Phase 10: feed the achievement manager fresh external counters
-    // every time the menu loads (post-purchase, post-claim, etc.) so
-    // unlocks like first_skin / streak_7 / maxed_upgrade fire as soon
-    // as the underlying state changes.
     await _syncAchievementExternals();
 
     if (await widget.loginRepo.isClaimAvailable() &&
@@ -120,13 +132,6 @@ class _MainMenuScreenState extends State<MainMenuScreen>
     );
   }
 
-  @override
-  void dispose() {
-    _bgController.dispose();
-    _balanceSub?.cancel();
-    super.dispose();
-  }
-
   Future<void> _showDailyLogin() async {
     await Navigator.of(context).push(
       PageRouteBuilder<void>(
@@ -153,19 +158,28 @@ class _MainMenuScreenState extends State<MainMenuScreen>
   Future<void> _go(String routeName) async {
     await Navigator.of(context).pushNamed(routeName);
     if (!mounted) return;
-    // Returning from store/stats/etc. — re-run the achievement
-    // external sync so unlocks like first_skin or maxed_upgrade fire
-    // immediately on the menu instead of waiting for the next launch.
     await _syncAchievementExternals();
+    final hs = await widget.statsRepo.getHighScore();
+    if (mounted) setState(() => _highScore = hs);
   }
+
+  Future<void> _toggleSound() async {
+    final next = !_soundEnabled;
+    await widget.settings.setSoundEnabled(next);
+    widget.audioService.syncFromSettings(widget.settings);
+    if (mounted) setState(() => _soundEnabled = next);
+  }
+
+  // ---- build --------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF050510),
+      backgroundColor: const Color(0xFF0A0A1A),
       body: Stack(
         fit: StackFit.expand,
         children: [
+          // Animated multi-particle background.
           AnimatedBuilder(
             animation: _bgController,
             builder: (context, _) => CustomPaint(
@@ -178,9 +192,16 @@ class _MainMenuScreenState extends State<MainMenuScreen>
                 _buildTopBar(),
                 const Spacer(),
                 _buildTitle(),
-                const SizedBox(height: 32),
-                _buildButtons(),
+                const SizedBox(height: 12),
+                if (_highScore > 0) _buildHighScore(),
                 const Spacer(),
+                _buildPlayButton(),
+                const Spacer(),
+                _buildBottomNavRow(),
+                const SizedBox(height: 8),
+                _buildSecondaryButtons(),
+                const SizedBox(height: 12),
+                const BannerAdWidget(),
               ],
             ),
           ),
@@ -189,6 +210,8 @@ class _MainMenuScreenState extends State<MainMenuScreen>
     );
   }
 
+  // ---- top bar ------------------------------------------------------------
+
   Widget _buildTopBar() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
@@ -196,6 +219,7 @@ class _MainMenuScreenState extends State<MainMenuScreen>
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           _buildStreakPill(),
+          _buildSoundToggle(),
           _buildCoinPill(),
         ],
       ),
@@ -206,16 +230,21 @@ class _MainMenuScreenState extends State<MainMenuScreen>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: const Color(0x55FFFFFF),
+        color: const Color(0x33FFFFFF),
         borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white24),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.calendar_month, size: 16, color: Colors.white),
+          const Icon(
+            Icons.local_fire_department,
+            size: 16,
+            color: Color(0xFFFF9100),
+          ),
           const SizedBox(width: 4),
           Text(
-            '$_streak day${_streak == 1 ? '' : 's'}',
+            '$_streak',
             style: const TextStyle(
               color: Colors.white,
               fontSize: 13,
@@ -227,11 +256,32 @@ class _MainMenuScreenState extends State<MainMenuScreen>
     );
   }
 
+  Widget _buildSoundToggle() {
+    return GestureDetector(
+      onTap: _toggleSound,
+      child: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: const Color(0x33FFFFFF),
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white24),
+        ),
+        child: Icon(
+          _soundEnabled ? Icons.volume_up : Icons.volume_off,
+          color: _soundEnabled
+              ? const Color(0xFF40E0D0)
+              : Colors.white38,
+          size: 18,
+        ),
+      ),
+    );
+  }
+
   Widget _buildCoinPill() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: const Color(0x55000000),
+        color: const Color(0x33000000),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: const Color(0xFFFFD700), width: 1),
       ),
@@ -260,6 +310,8 @@ class _MainMenuScreenState extends State<MainMenuScreen>
     );
   }
 
+  // ---- title + score ------------------------------------------------------
+
   Widget _buildTitle() {
     return const Padding(
       padding: EdgeInsets.symmetric(horizontal: 24),
@@ -268,145 +320,249 @@ class _MainMenuScreenState extends State<MainMenuScreen>
         textAlign: TextAlign.center,
         style: TextStyle(
           color: Colors.white,
-          fontSize: 56,
+          fontSize: 62,
           fontWeight: FontWeight.w900,
-          letterSpacing: 6,
+          letterSpacing: 8,
           shadows: [
             Shadow(color: Color(0xFF40E0D0), blurRadius: 20),
-            Shadow(color: Color(0xFFFFD700), blurRadius: 40),
+            Shadow(color: Color(0xFF7B2FFF), blurRadius: 48),
+            Shadow(color: Color(0xFF40E0D0), blurRadius: 8),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildButtons() {
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 320),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+  Widget _buildHighScore() {
+    return Text(
+      'BEST  $_highScore',
+      style: const TextStyle(
+        color: Color(0xFFFFD700),
+        fontSize: 15,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 4,
+        shadows: [Shadow(color: Color(0xFFFF9100), blurRadius: 10)],
+      ),
+    );
+  }
+
+  // ---- pulsing PLAY button -------------------------------------------------
+
+  Widget _buildPlayButton() {
+    return AnimatedBuilder(
+      animation: _pulseController,
+      builder: (context, _) {
+        final t = _pulseController.value;
+        final scale = 0.93 + 0.07 * t;
+        final glowAlpha = 0.55 + 0.45 * t;
+        return Transform.scale(
+          scale: scale,
+          child: GestureDetector(
+            onTap: () => _go(AppRoutes.game),
+            child: Container(
+              width: 168,
+              height: 64,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(32),
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF00E5FF), Color(0xFF7B2FFF)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF40E0D0).withValues(alpha: glowAlpha),
+                    blurRadius: 28,
+                    spreadRadius: 2,
+                  ),
+                  BoxShadow(
+                    color: const Color(0xFF7B2FFF)
+                        .withValues(alpha: glowAlpha * 0.7),
+                    blurRadius: 36,
+                    spreadRadius: 6,
+                  ),
+                ],
+              ),
+              alignment: Alignment.center,
+              child: const Text(
+                'PLAY',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 26,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 7,
+                  shadows: [Shadow(color: Colors.white, blurRadius: 10)],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // ---- glassmorphism bottom nav row ----------------------------------------
+
+  Widget _buildBottomNavRow() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 28),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          _menuButton(
-            'PLAY',
-            const Color(0xFF40E0D0),
-            () { _go(AppRoutes.game); },
-          ),
-          const SizedBox(height: 10),
-          _menuButton(
-            'STORE',
-            const Color(0xFFFF9100),
-            () { _go(AppRoutes.store); },
-          ),
-          const SizedBox(height: 10),
-          _menuButton(
-            'STATS',
-            const Color(0xFFFFD700),
-            () { _go(AppRoutes.stats); },
-          ),
-          const SizedBox(height: 10),
-          _menuButton(
-            'SETTINGS',
-            const Color(0xFF80DEEA),
-            () { _go(AppRoutes.settings); },
-          ),
-          const SizedBox(height: 10),
-          _menuButton(
-            'LEADERBOARD',
-            const Color(0xFFB388FF),
-            () { _go(AppRoutes.leaderboard); },
-          ),
-          const SizedBox(height: 10),
-          _menuButton(
-            'ACHIEVEMENTS',
-            const Color(0xFFF8BBD0),
-            () { _go(AppRoutes.achievements); },
-          ),
+          _glassNavButton(Icons.store, 'STORE', () => _go(AppRoutes.store)),
+          _glassNavButton(
+              Icons.leaderboard, 'RANKS', () => _go(AppRoutes.leaderboard)),
+          _glassNavButton(
+              Icons.settings, 'SETTINGS', () => _go(AppRoutes.settings)),
         ],
       ),
     );
   }
 
-  Widget _menuButton(String label, Color color, VoidCallback onTap) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
-      child: FilledButton(
-        onPressed: onTap,
-        style: FilledButton.styleFrom(
-          backgroundColor: color,
-          foregroundColor: const Color(0xFF101018),
-          padding: const EdgeInsets.symmetric(vertical: 14),
-        ),
-        child: Text(
-          label,
-          style: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 3,
+  Widget _glassNavButton(
+      IconData icon, String label, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: Container(
+            width: 90,
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            decoration: BoxDecoration(
+              color: const Color(0x22FFFFFF),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                  color: const Color(0x55FFFFFF), width: 1),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, color: const Color(0xFF40E0D0), size: 26),
+                const SizedBox(height: 5),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.5,
+                  ),
+                ),
+              ],
+            ),
           ),
+        ),
+      ),
+    );
+  }
+
+  // ---- secondary text buttons ---------------------------------------------
+
+  Widget _buildSecondaryButtons() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _textNavButton('STATS', () => _go(AppRoutes.stats)),
+        const SizedBox(width: 28),
+        _textNavButton('ACHIEVEMENTS', () => _go(AppRoutes.achievements)),
+      ],
+    );
+  }
+
+  Widget _textNavButton(String label, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Colors.white38,
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 2,
         ),
       ),
     );
   }
 }
 
-/// Stylized stratosphere → core gradient with a slowly-falling orb.
-/// Cheap enough to repaint every frame at 60fps even on low-end Android.
+// ---- background painter ---------------------------------------------------
+
+/// Dark deep-space gradient with 8 falling orbs at different speeds + phases,
+/// plus twinkling stars. Cheap enough for 60 fps on low-end Android.
 class _MenuBackgroundPainter extends CustomPainter {
-  /// 0..1 phase. The orb's vertical position lerps over the cycle.
   final double phase;
 
   _MenuBackgroundPainter(this.phase);
 
+  // (xFraction, phaseOffset, radius, color, alpha)
+  static const _particles = [
+    (0.12, 0.00, 7.0, Color(0xFF40E0D0), 0.75),
+    (0.35, 0.22, 5.0, Color(0xFFB388FF), 0.55),
+    (0.62, 0.47, 9.0, Color(0xFF40E0D0), 0.80),
+    (0.82, 0.08, 4.5, Color(0xFFFFD700), 0.45),
+    (0.18, 0.73, 6.5, Color(0xFF7B2FFF), 0.60),
+    (0.50, 0.34, 4.0, Color(0xFF40E0D0), 0.35),
+    (0.88, 0.58, 7.5, Color(0xFFFF9100), 0.50),
+    (0.40, 0.88, 5.5, Color(0xFFB388FF), 0.40),
+  ];
+
   @override
   void paint(Canvas canvas, Size size) {
-    // Background gradient — top sky to deep core.
+    // Background gradient.
     final bg = Paint()
       ..shader = const LinearGradient(
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
         colors: [
-          Color(0xFF1A1A3E),
-          Color(0xFF0A0A14),
-          Color(0xFF200008),
+          Color(0xFF0A0A1A),
+          Color(0xFF0D0525),
+          Color(0xFF1A0A3A),
         ],
-        stops: [0, 0.6, 1],
+        stops: [0, 0.55, 1],
       ).createShader(Offset.zero & size);
     canvas.drawRect(Offset.zero & size, bg);
 
-    // Falling orb — drifts vertically with a slight horizontal sway so
-    // it doesn't read as static.
-    final orbY = size.height * (phase * 1.2 - 0.1);
-    final orbX = size.width * (0.3 + 0.4 * math.sin(phase * math.pi * 2));
-    if (orbY > -40 && orbY < size.height + 40) {
+    // Falling orbs.
+    for (final (xFrac, offset, r, color, alpha)
+        in _particles) {
+      final particlePhase = (phase + offset) % 1.0;
+      final orbY = size.height * (particlePhase * 1.1 - 0.05);
+      if (orbY < -r * 3 || orbY > size.height + r * 3) continue;
+      final sway =
+          math.sin(phase * math.pi * 2 + offset * math.pi * 3) * 22;
+      final orbX = size.width * xFrac + sway;
+
       final glow = Paint()
         ..shader = RadialGradient(
           colors: [
-            const Color(0xFF40E0D0).withValues(alpha: 0.6),
-            const Color(0xFF40E0D0).withValues(alpha: 0.0),
+            color.withValues(alpha: alpha),
+            color.withValues(alpha: 0.0),
           ],
         ).createShader(Rect.fromCircle(
           center: Offset(orbX, orbY),
-          radius: 80,
+          radius: r * 3.5,
         ));
-      canvas.drawCircle(Offset(orbX, orbY), 80, glow);
+      canvas.drawCircle(Offset(orbX, orbY), r * 3.5, glow);
       canvas.drawCircle(
         Offset(orbX, orbY),
-        14,
-        Paint()..color = const Color(0xFFE0FFFF),
+        r,
+        Paint()..color = color.withValues(alpha: (alpha * 1.2).clamp(0, 1)),
       );
     }
 
-    // A handful of stationary "stars" — randomised but seeded by their
-    // index so they don't shimmer between frames.
-    for (int i = 0; i < 30; i++) {
-      final px = (i * 73) % size.width.toInt();
-      final py = (i * 137) % size.height.toInt();
-      final r = 0.6 + (i % 3) * 0.4;
-      final alpha = 0.3 + ((i * 19) % 7) * 0.08;
+    // Twinkling stars.
+    for (int i = 0; i < 45; i++) {
+      final px = (i * 71 + 19) % size.width.toInt();
+      final py = (i * 139 + 31) % size.height.toInt();
+      final r = 0.5 + (i % 4) * 0.3;
+      final twinkle =
+          0.15 + 0.45 * math.sin(phase * math.pi * 7 + i * 1.47).abs();
       canvas.drawCircle(
         Offset(px.toDouble(), py.toDouble()),
         r,
-        Paint()..color = const Color(0xFFFFFFFF).withValues(alpha: alpha),
+        Paint()..color = Colors.white.withValues(alpha: twinkle),
       );
     }
   }

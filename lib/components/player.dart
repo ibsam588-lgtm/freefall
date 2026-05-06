@@ -67,6 +67,9 @@ class Player extends PositionComponent {
   /// Gravity utility — injected so tests can swap it.
   final GravitySystem gravity;
 
+  /// Logical play-field width. X position is clamped to [radius .. playWidth-radius].
+  final double playWidth;
+
   /// Where [respawn] returns the player when called without an explicit
   /// position (also where the orb starts the run).
   final Vector2 startPosition;
@@ -133,6 +136,7 @@ class Player extends PositionComponent {
     TrailEffect? trail,
     int maxLives = defaultMaxLives,
     this.particleSystem,
+    this.playWidth = 414,
   })  : skin = skin ?? PlayerSkin.defaultSkin,
         trail = trail ?? TrailEffect.defaultTrail,
         _maxLives = maxLives.clamp(1, absoluteMaxLives),
@@ -348,6 +352,9 @@ class Player extends PositionComponent {
     velocity.setFrom(newVel);
 
     position.add(velocity * dt);
+
+    // Clamp x so the ball never exits the horizontal play area.
+    position.x = position.x.clamp(radius, playWidth - radius);
   }
 
   void _stepTrail() {

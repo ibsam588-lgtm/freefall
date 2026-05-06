@@ -14,6 +14,7 @@
 
 import 'package:flutter/material.dart';
 
+import '../components/banner_ad_widget.dart';
 import '../models/player_skin.dart';
 import '../models/run_stats.dart';
 import '../repositories/coin_repository.dart';
@@ -210,30 +211,37 @@ class _RunSummaryScreenState extends State<RunSummaryScreen>
     return Material(
       color: const Color(0xCC000010),
       child: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 400),
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (stats.isNewHighScore) _buildNewBestBanner(),
-                  const SizedBox(height: 8),
-                  _buildScoreDisplay(),
-                  const SizedBox(height: 24),
-                  _buildStatRow(
-                      'Depth', '${stats.depthMeters.toStringAsFixed(0)}m'),
-                  _buildStatRow('Coins', '${stats.coinsEarned}'),
-                  _buildStatRow('Gems', '${stats.gemsCollected}'),
-                  _buildStatRow('Near misses', '${stats.nearMisses}'),
-                  _buildStatRow('Best combo', 'x${stats.bestCombo}'),
-                  const SizedBox(height: 24),
-                  _buildActions(),
-                ],
+        child: Column(
+          children: [
+            Expanded(
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 400),
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (stats.isNewHighScore) _buildNewBestBanner(),
+                        const SizedBox(height: 8),
+                        _buildScoreDisplay(),
+                        const SizedBox(height: 24),
+                        _buildStatRow(
+                            'Depth', '${stats.depthMeters.toStringAsFixed(0)}m'),
+                        _buildStatRow('Coins', '${stats.coinsEarned}'),
+                        _buildStatRow('Gems', '${stats.gemsCollected}'),
+                        _buildStatRow('Near misses', '${stats.nearMisses}'),
+                        _buildStatRow('Best combo', 'x${stats.bestCombo}'),
+                        const SizedBox(height: 24),
+                        _buildActions(),
+                      ],
+                    ),
+                  ),
+                ),
               ),
             ),
-          ),
+            const BannerAdWidget(),
+          ],
         ),
       ),
     );

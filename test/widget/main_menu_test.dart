@@ -6,9 +6,9 @@
 // buttons push the named routes.
 //
 // We bump the viewport to 1200×900 because the default 800×600 test
-// surface clips the bottom CTAs (LEADERBOARD / ACHIEVEMENTS) — the
-// menu is laid out for portrait-phone proportions, so the test
-// `tester.tap` would otherwise land on an off-screen widget.
+// surface clips the bottom CTAs — the menu is laid out for portrait-phone
+// proportions, so the test `tester.tap` would otherwise land on an
+// off-screen widget.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -41,6 +41,8 @@ void main() {
             loginRepo: env.loginRepo,
             storeRepo: env.storeRepo,
             settings: env.settings,
+            statsRepo: env.statsRepo,
+            audioService: env.audioService,
           ),
           env,
         ),
@@ -64,6 +66,8 @@ void main() {
             loginRepo: env.loginRepo,
             storeRepo: env.storeRepo,
             settings: env.settings,
+            statsRepo: env.statsRepo,
+            audioService: env.audioService,
           ),
           env,
           observer: recorder,
@@ -93,6 +97,8 @@ void main() {
             loginRepo: env.loginRepo,
             storeRepo: env.storeRepo,
             settings: env.settings,
+            statsRepo: env.statsRepo,
+            audioService: env.audioService,
           ),
           env,
           observer: recorder,
@@ -111,7 +117,7 @@ void main() {
     });
   });
 
-  testWidgets('LEADERBOARD button pushes the /leaderboard route',
+  testWidgets('RANKS button pushes the /leaderboard route',
       (tester) async {
     await _withWideViewport(tester, () async {
       final env = await buildTestEnv();
@@ -123,6 +129,8 @@ void main() {
             loginRepo: env.loginRepo,
             storeRepo: env.storeRepo,
             settings: env.settings,
+            statsRepo: env.statsRepo,
+            audioService: env.audioService,
           ),
           env,
           observer: recorder,
@@ -133,7 +141,7 @@ void main() {
         ),
       );
       await tester.pump();
-      await tester.tap(find.text('LEADERBOARD'));
+      await tester.tap(find.text('RANKS'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
       expect(find.text('LEADERBOARD ROUTE'), findsOneWidget);

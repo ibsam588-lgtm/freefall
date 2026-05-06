@@ -40,6 +40,8 @@ class AppRoutes {
               loginRepo: deps.loginRepo,
               storeRepo: deps.storeRepo,
               settings: deps.settings,
+              statsRepo: deps.statsRepo,
+              audioService: deps.audioService,
             );
           },
         ),
@@ -81,9 +83,13 @@ class AppRoutes {
         ),
       leaderboard => MaterialPageRoute<void>(
           settings: settings,
-          builder: (ctx) => LeaderboardScreen(
-            gameServices: AppDependencies.of(ctx).gameServices,
-          ),
+          builder: (ctx) {
+            final deps = AppDependencies.of(ctx);
+            return LeaderboardScreen(
+              gameServices: deps.gameServices,
+              statsRepo: deps.statsRepo,
+            );
+          },
         ),
       achievements => MaterialPageRoute<void>(
           settings: settings,
