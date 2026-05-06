@@ -1,15 +1,14 @@
 name: Release to Play Store
 
-# Phase-16 release pipeline. Fires on a `v*` tag (e.g. `v1.0.0`)
-# pushed to main. Builds a signed App Bundle and uploads it to the
-# Play Console's internal-testing track. Promotion to closed/open
-# testing or production is a manual step in Play Console — see
-# RELEASE_CHECKLIST.md.
+# Phase-16 release pipeline. Fires on every push to main.
+# Builds a signed App Bundle and uploads it to the Play Console's
+# internal-testing track. Promotion to closed/open testing or
+# production is a manual step in Play Console — see RELEASE_CHECKLIST.md.
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
@@ -68,7 +67,6 @@ jobs:
           retention-days: 30
 
       - name: Upload to Google Play Internal Testing
-        if: github.ref_type == 'tag'
         run: |
           pip install google-api-python-client google-auth --quiet
           python3 << 'PYEOF'
