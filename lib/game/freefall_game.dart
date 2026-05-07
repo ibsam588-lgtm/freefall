@@ -650,7 +650,14 @@ class FreefallGame extends FlameGame {
     _whooshCooldown = whooshIntervalSeconds;
     achievementManager?.onRunStarted();
     ghostRunner?.onRunStarted();
-    player.respawn();
+    // No spawn-time i-frames on a fresh run start. Player.respawn's
+    // 2-second invincibility default is intended for mid-run respawn
+    // semantics (re-entering near a possibly-obstructed spot); on a
+    // clean restart the player drops in at the top of an empty column
+    // and the i-frame window only serves to silently skip the
+    // collision pass while the orb falls through the first ~1000px of
+    // freshly spawned obstacles.
+    player.respawn(null, false);
     _prevPlayerY = player.position.y;
     _prevPlayerX = player.position.x;
     // Phase 11: respawn cue + restart the music for the starting zone

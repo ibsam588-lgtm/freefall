@@ -318,16 +318,28 @@ class Player extends PositionComponent {
   }
 
   /// Re-assemble at [target] (or the configured spawn point if omitted).
-  /// Restores lives to [maxLives], clears velocity and i-frames, and
-  /// triggers the inward-converge respawn particle effect.
-  void respawn([Vector2? target]) {
+  /// Restores lives to [maxLives], clears velocity, and triggers the
+  /// inward-converge respawn particle effect.
+  ///
+  /// [withInvincibility] grants the standard [invincibilityDuration]
+  /// of i-frames after the respawn — appropriate for a checkpoint /
+  /// extra-life respawn where the orb might re-enter mid-screen on top
+  /// of an obstacle. Defaults to true to preserve historical behavior.
+  ///
+  /// For a clean run-start (e.g. [FreefallGame.restartRun]) callers
+  /// should pass `false`: the player is starting at the top of an
+  /// empty column with no obstacles within reach, and a 2-second grace
+  /// silently disables the entire collision pass while the orb falls
+  /// through ~1000px of fresh spawns — the original "ball passes
+  /// through MovingBlocks at the start" bug.
+  void respawn([Vector2? target, bool withInvincibility = true]) {
     final dest = target ?? startPosition;
     position.setFrom(dest);
     velocity.setZero();
     _trail.clear();
     _lives = _maxLives;
     _isDeadState = false;
-    _invincibleTimer = invincibilityDuration;
+    _invincibleTimer = withInvincibility ? invincibilityDuration : 0;
     _fallbackDeathParticles.clear();
     final ps = particleSystem;
     if (ps != null) {
