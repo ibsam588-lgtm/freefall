@@ -517,11 +517,7 @@ class FreefallGame extends FlameGame {
     // reflects this frame's physics. Skipped during i-frames so a hit that
     // already triggered the damage/invincibility cycle can't double-fire.
     if (player.isAlive && !player.isInvincible) {
-      final sweep = _playerHitbox();
-      final hitObstacles = collisionSystem.queryPlayerHits(
-        sweep,
-        obstacleManager.activeObstacles,
-      );
+      final hitObstacles = _collectHitsAlongPath();
       // Sort by signed Y-distance from the player center: a downward-
       // falling player should resolve hits on the topmost obstacle
       // first, so a thin platform on the leading edge of the sweep is
@@ -549,6 +545,64 @@ class FreefallGame extends FlameGame {
         if (!player.isAlive || player.isInvincible) break;
       }
     }
+  }
+
+  /// Walks the player's per-frame motion in fixed-size substeps and
+  /// collects every distinct obstacle the orb's hitbox overlaps along
+  /// the way. The previous swept-AABB approach was conservative on
+  /// paper but produced false negatives at the corner cases that ship
+  /// in practice: a rotating arm whose angle moves between substeps,
+  /// a dt-clamped frame where the orb crosses two thin planks, and any
+  /// obstacle whose [intersects] uses the player's CENTER rather than
+  /// the AABB bounds (RotatingObstacle, Jellyfish, MagnetObstacle —
+  /// the swept AABB grows so wide the center sits in a meaningless
+  /// spot). Substepping every ~4px guarantees every plank along the
+  /// orb's actual line of travel is sampled with a centered hitbox.
+  List<GameObstacle> _collectHitsAlongPath() {
+    const r = Player.radius;
+    // Step size: keep substeps no larger than half the thinnest
+    // obstacle (StaticPlatform.barHeight is 20px → 4px step has 5
+    // checks per plank crossing). For the typical ~20px-per-frame
+    // motion this is ~5 substeps; well below the per-frame budget.
+    const stepPixels = 4.0;
+
+    final cx = player.position.x;
+    final cy = player.position.y;
+    final dx = cx - _prevPlayerX;
+    final dy = cy - _prevPlayerY;
+    // Same maxSweepDistance clamp as the old swept hitbox: a respawn
+    // or pause-resume teleport can produce a huge dx/dy that would
+    // otherwise hit every obstacle in flight.
+    final clampedDx = dx.abs() > maxSweepDistance
+        ? maxSweepDistance * (dx.isNegative ? -1 : 1)
+        : dx;
+    final clampedDy = dy.abs() > maxSweepDistance
+        ? maxSweepDistance * (dy.isNegative ? -1 : 1)
+        : dy;
+
+    final dist = math.sqrt(clampedDx * clampedDx + clampedDy * clampedDy);
+    final substeps = math.max(1, (dist / stepPixels).ceil());
+
+    final startX = cx - clampedDx;
+    final startY = cy - clampedDy;
+    final unique = <GameObstacle>{};
+    for (int i = 0; i <= substeps; i++) {
+      final t = substeps == 0 ? 1.0 : i / substeps;
+      final stepX = startX + clampedDx * t;
+      final stepY = startY + clampedDy * t;
+      final stepRect = Rect.fromLTRB(
+        stepX - r,
+        stepY - r,
+        stepX + r,
+        stepY + r,
+      );
+      final hits = collisionSystem.queryPlayerHits(
+        stepRect,
+        obstacleManager.activeObstacles,
+      );
+      unique.addAll(hits);
+    }
+    return unique.toList(growable: false);
   }
 
   /// Phase 9: rebuild a fresh run on the same FreefallGame instance.

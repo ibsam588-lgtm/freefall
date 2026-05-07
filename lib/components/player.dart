@@ -145,6 +145,12 @@ class Player extends PositionComponent {
           position: startPosition.clone(),
           size: Vector2.all(radius * 2),
           anchor: Anchor.center,
+          // Render above obstacles (priority 0) so the orb — and its
+          // shield/flash i-frame feedback — are visible during contact
+          // instead of being painted over by the plank the player just
+          // hit. ZoneTransition / HUD sit at >= 999 so this stays
+          // safely below the screen-space overlay layers.
+          priority: 100,
         );
 
   // ---- Public state getters ------------------------------------------------

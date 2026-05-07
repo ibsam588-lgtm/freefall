@@ -96,38 +96,69 @@ class PlayerTrail extends Component {
     }
   }
 
-  // Trail samples are stored in *world* coordinates. Since this
-  // component is a child of Player (which is positioned in the world),
-  // we render relative to the player's local origin by subtracting the
-  // player's current world position from each sample.
+  // How many of the most recent trail samples to skip when rendering
+  // the blob-style effects (default, comet, helix, sparkle, glitch,
+  // ghost). The newest few samples sit at or within ~40px of the
+  // player's current position, so drawing them paints the trail's head
+  // on top of the orb itself — that's the "white cloud on the ball"
+  // bug. Keeping the head behind the orb makes the trail read as a
+  // proper comet tail BEHIND the direction of travel.
+  static const int _headSkipSamples = 3;
+
+  // Trail samples are stored in *world* coordinates. The owning Player
+  // is a PositionComponent with anchor=center and size=Vector2.all(r*2),
+  // which means the canvas this component renders into has its origin
+  // (0, 0) at the TOP-LEFT of the orb's bounding box — the orb center
+  // sits at local (r, r). A naive subtraction of player position from
+  // a world sample lands the newest sample at canvas (0, 0) (the
+  // bbox top-left), so the head of the trail is drawn off the orb's
+  // top-left corner, NOT behind it. Adding (r, r) re-anchors every
+  // sample to the orb center.
   Offset _toLocal(Vector2 world) {
     final p = positionProvider();
-    return Offset(world.x - p.x, world.y - p.y);
+    final r = radiusProvider();
+    return Offset(world.x - p.x + r, world.y - p.y + r);
+  }
+
+  /// How many samples to render after honoring [_headSkipSamples].
+  /// Returns 0 if there isn't enough history to skip the head yet
+  /// (e.g. immediately after respawn, when [_trail] has just been
+  /// cleared and is filling back up).
+  int _visibleCount(List<Vector2> samples) {
+    final v = samples.length - _headSkipSamples;
+    return v > 0 ? v : 0;
   }
 
   void _renderDefault(Canvas canvas, List<Vector2> samples) {
     final r = radiusProvider();
-    for (int i = 0; i < samples.length; i++) {
-      // i==last is newest; fade from headAlpha down to 0.
-      final t = (i + 1) / samples.length; // 0..1
+    final visible = _visibleCount(samples);
+    if (visible == 0) return;
+    for (int i = 0; i < visible; i++) {
+      // t=0 oldest (tail end), t=1 newest visible (just behind orb).
+      final t = (i + 1) / visible;
       final p = _toLocal(samples[i]);
       final a = effect.headAlpha * t;
       final paint = Paint()..color = color.withValues(alpha: a.clamp(0, 1));
-      canvas.drawCircle(p, r * (0.35 + 0.45 * t), paint);
+      // Smaller radii than before (was 0.35..0.80 of r): the previous
+      // numbers stacked into a blob even with head skipping when many
+      // recent samples cluster near the player at low speed.
+      canvas.drawCircle(p, r * (0.18 + 0.32 * t), paint);
     }
   }
 
   void _renderComet(Canvas canvas, List<Vector2> samples) {
     final r = radiusProvider();
+    final visible = _visibleCount(samples);
+    if (visible == 0) return;
     const hot = Color(0xFFFFFFFF);
-    for (int i = 0; i < samples.length; i++) {
-      final t = (i + 1) / samples.length;
+    for (int i = 0; i < visible; i++) {
+      final t = (i + 1) / visible;
       final p = _toLocal(samples[i]);
       // Lerp hot-white head -> base color tail.
       final c = Color.lerp(color, hot, t)!;
       // Elongated ellipse: thinner at the back, taller at the front.
-      final w = r * (0.25 + 0.7 * t);
-      final h = r * (0.6 + 1.4 * t);
+      final w = r * (0.18 + 0.45 * t);
+      final h = r * (0.4 + 0.9 * t);
       final paint = Paint()..color = c.withValues(alpha: effect.headAlpha * t);
       canvas.save();
       canvas.translate(p.dx, p.dy);
@@ -138,8 +169,10 @@ class PlayerTrail extends Component {
 
   void _renderHelix(Canvas canvas, List<Vector2> samples) {
     final r = radiusProvider();
-    for (int i = 0; i < samples.length; i++) {
-      final t = (i + 1) / samples.length;
+    final visible = _visibleCount(samples);
+    if (visible == 0) return;
+    for (int i = 0; i < visible; i++) {
+      final t = (i + 1) / visible;
       final p = _toLocal(samples[i]);
       // Sine offset around the trail's vertical axis. Phase shifts in
       // time so the helix appears to spin.
@@ -147,20 +180,22 @@ class PlayerTrail extends Component {
       final swing = math.sin(theta) * r * 1.2;
       final a = effect.headAlpha * t;
       final paint = Paint()..color = color.withValues(alpha: a);
-      canvas.drawCircle(Offset(p.dx + swing, p.dy), r * (0.25 + 0.4 * t), paint);
+      canvas.drawCircle(Offset(p.dx + swing, p.dy), r * (0.2 + 0.3 * t), paint);
       // Mirrored strand for the second helix coil.
-      canvas.drawCircle(Offset(p.dx - swing, p.dy), r * (0.25 + 0.4 * t),
+      canvas.drawCircle(Offset(p.dx - swing, p.dy), r * (0.2 + 0.3 * t),
           Paint()..color = color.withValues(alpha: a * 0.7));
     }
   }
 
   void _renderSparkle(Canvas canvas, List<Vector2> samples) {
     final r = radiusProvider();
-    for (int i = 0; i < samples.length; i++) {
-      final t = (i + 1) / samples.length;
+    final visible = _visibleCount(samples);
+    if (visible == 0) return;
+    for (int i = 0; i < visible; i++) {
+      final t = (i + 1) / visible;
       final p = _toLocal(samples[i]);
       final rotation = _phase * 3 + i * 0.4;
-      _drawStar(canvas, p, r * 0.55 * t, rotation,
+      _drawStar(canvas, p, r * 0.45 * t, rotation,
           color.withValues(alpha: effect.headAlpha * t));
     }
   }
@@ -188,10 +223,12 @@ class PlayerTrail extends Component {
 
   void _renderGlitch(Canvas canvas, List<Vector2> samples) {
     final r = radiusProvider();
+    final visible = _visibleCount(samples);
+    if (visible == 0) return;
     // Brief flicker: alternate sample alpha based on phase parity.
     final flickerOn = (_phase * 30).floor().isEven;
-    for (int i = 0; i < samples.length; i++) {
-      final t = (i + 1) / samples.length;
+    for (int i = 0; i < visible; i++) {
+      final t = (i + 1) / visible;
       final p = _toLocal(samples[i]);
       final dx = _glitchOffsets[i % _glitchOffsets.length];
       final flickerAlpha = flickerOn || i.isEven ? 1.0 : 0.4;
@@ -200,24 +237,28 @@ class PlayerTrail extends Component {
       final paintR = Paint()..color = const Color(0xFFFF3366).withValues(alpha: a * 0.6);
       final paintB = Paint()..color = const Color(0xFF33CCFF).withValues(alpha: a * 0.6);
       final paintMain = Paint()..color = color.withValues(alpha: a);
-      canvas.drawCircle(Offset(p.dx + dx + 2, p.dy), r * 0.5 * t, paintR);
-      canvas.drawCircle(Offset(p.dx + dx - 2, p.dy), r * 0.5 * t, paintB);
-      canvas.drawCircle(Offset(p.dx + dx, p.dy), r * 0.5 * t, paintMain);
+      canvas.drawCircle(Offset(p.dx + dx + 2, p.dy), r * 0.4 * t, paintR);
+      canvas.drawCircle(Offset(p.dx + dx - 2, p.dy), r * 0.4 * t, paintB);
+      canvas.drawCircle(Offset(p.dx + dx, p.dy), r * 0.4 * t, paintMain);
     }
   }
 
   void _renderGhost(Canvas canvas, List<Vector2> samples) {
     final r = radiusProvider();
-    for (int i = 0; i < samples.length; i++) {
-      final t = (i + 1) / samples.length;
+    final visible = _visibleCount(samples);
+    if (visible == 0) return;
+    for (int i = 0; i < visible; i++) {
+      final t = (i + 1) / visible;
       final p = _toLocal(samples[i]);
-      // Soft, blurred white blob that absorbs the skin's trailColor only
-      // faintly — ghost should always read as ethereal and pale.
+      // Soft, blurred blob that absorbs the skin's trailColor only
+      // faintly — ghost should always read as ethereal and pale. Was
+      // r * (0.6..1.2) which painted a giant white cloud over the orb;
+      // now small enough that the head sits behind, not on, the ball.
       final tint = Color.lerp(Colors.white, color, 0.25)!;
       final paint = Paint()
         ..color = tint.withValues(alpha: effect.headAlpha * t)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
-      canvas.drawCircle(p, r * (0.6 + 0.6 * t), paint);
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
+      canvas.drawCircle(p, r * (0.3 + 0.4 * t), paint);
     }
   }
 
