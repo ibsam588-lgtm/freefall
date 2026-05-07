@@ -17,6 +17,7 @@ import 'package:flame/game.dart';
 
 import '../components/combo_display.dart';
 import '../components/obstacles/game_obstacle.dart';
+import '../components/obstacles/speed_gate.dart';
 import '../components/floating_text.dart';
 import '../components/hud.dart';
 import '../components/near_miss_detector.dart';
@@ -435,11 +436,12 @@ class FreefallGame extends FlameGame {
     obstacleManager.pruneOffscreen(viewportTopY);
     obstacleManager.notifyPlayer(player.position);
 
-    // Phase 5: drive collectible magnet + pickup detection from the
-    // host (instead of inside the manager's update) so we always see
-    // the freshest player position. Pruning runs against the same
-    // viewport-top reference as obstacles for consistency.
-    collectibleManager.runPickupPass(player.position, clamped);
+    // Phase 5: prune off-screen collectibles before super.update so
+    // freshly off-screen items can't spuriously match the magnet pull
+    // this frame. The pickup pass itself moves to AFTER super.update
+    // (below) so it tests against this frame's post-physics player
+    // position — not last frame's stale value, which lost coins on
+    // fast-fall frames.
     collectibleManager.pruneOffscreen(viewportTopY);
 
     // Phase 6: bill the player's depth into the score (delta-based,
@@ -513,6 +515,13 @@ class FreefallGame extends FlameGame {
       logicalWidth - Player.radius,
     );
 
+    // Phase 5: collectible pickup pass — runs AFTER super.update so it
+    // tests against this frame's post-physics player position. Running
+    // pre-update used the previous frame's stale position, which on a
+    // fast-fall frame (~28px at terminal velocity, ~26px pickup
+    // radius) would silently miss coins the player visibly crossed.
+    collectibleManager.runPickupPass(player.position, clamped);
+
     // Obstacle collision pass. Run after super.update so player.position
     // reflects this frame's physics. Skipped during i-frames so a hit that
     // already triggered the damage/invincibility cycle can't double-fire.
@@ -537,11 +546,27 @@ class FreefallGame extends FlameGame {
           case ObstacleHitEffect.stun:
             player.onHit();
           case ObstacleHitEffect.boost:
+            // Speed gate: award score, accelerate the camera, and notify
+            // the achievement manager. Without this case the gate was
+            // consumed silently — visually dimmed but produced zero
+            // gameplay effect.
+            scoreManager.onSpeedGate();
+            cameraSystem.applySpeedBoost(
+              SpeedGate.cameraBoostSpeed,
+              SpeedGate.boostDuration,
+            );
+            audio.playSpeedGate();
+            achievementManager?.onEvent(
+              const AchievementEvent(AchievementEventKind.speedGatePassed),
+            );
           case ObstacleHitEffect.none:
             break;
         }
         // A single hit per frame is enough — break after the first
         // damaging contact so combo collapse fires exactly once.
+        // Boosts and no-ops don't end the loop: a frame that crosses
+        // a speed gate AND clips a plank should still apply the plank's
+        // damage.
         if (!player.isAlive || player.isInvincible) break;
       }
     }

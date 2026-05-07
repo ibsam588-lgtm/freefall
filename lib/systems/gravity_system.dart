@@ -8,6 +8,8 @@
 // velocity vector and get an updated copy back. This keeps gravity a
 // pure function and avoids a god-object that knows about every entity.
 
+import 'dart:math' as math;
+
 import 'package:flame/components.dart';
 
 import 'system_base.dart';
@@ -34,11 +36,20 @@ class GravitySystem implements GameSystem {
     // Integrate gravity into vertical component.
     v.y += gravity * dt;
 
-    // Quadratic-feeling drag implemented as a per-frame proportional damp.
-    // WHY: a true v^2 model needs sqrt and is overkill; this matches how
-    // the hand-tuned numbers were authored against a fixed 60Hz step.
-    v.x -= v.x * dragCoefficient;
-    v.y -= v.y * dragCoefficient;
+    // Continuous-decay drag, framerate-independent. The previous
+    // formulation `v -= v * dragCoefficient` ignored dt — it dropped
+    // 2% per frame regardless of frame length, so a 30Hz frame applied
+    // half the per-second drag of a 60Hz frame. That made the player
+    // accelerate FASTER on slower devices, exactly when the engine
+    // could least afford the extra fall speed (more tunneling through
+    // thin obstacles).
+    //
+    // dragCoefficient is preserved as the "fraction lost per 60Hz
+    // frame" the constants were authored against; converted to a
+    // continuous decay rate it's `dragCoefficient * 60` per second.
+    final factor = math.exp(-dragCoefficient * 60.0 * dt);
+    v.x *= factor;
+    v.y *= factor;
 
     // Clamp vertical speed only — sideways speed is bounded by player
     // input range, so doesn't need a separate cap.

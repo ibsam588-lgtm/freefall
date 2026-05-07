@@ -23,6 +23,12 @@ class WreckingBall extends GameObstacle {
 
   double _swingPhase;
 
+  /// Ball center at the START of the most recent frame. Used to sweep
+  /// the ball's arc through the frame in [intersects] so a fast
+  /// pendulum can't pass over a slow player between physics steps.
+  final Vector2 _prevPosition = Vector2.zero();
+  bool _prevPositionInitialized = false;
+
   WreckingBall({
     required super.obstacleId,
     required this.anchorPosition,
@@ -41,6 +47,12 @@ class WreckingBall extends GameObstacle {
   @override
   void update(double dt) {
     super.update(dt);
+    if (!_prevPositionInitialized) {
+      _prevPosition.setFrom(position);
+      _prevPositionInitialized = true;
+    } else {
+      _prevPosition.setFrom(position);
+    }
     _swingPhase += angularSpeed * dt;
     final angle = swingAngle;
     position
@@ -48,13 +60,27 @@ class WreckingBall extends GameObstacle {
       ..y = anchorPosition.y + chainLength * math.cos(angle);
   }
 
+  /// Circle-vs-AABB distance test against the player's rect. The old
+  /// rect-vs-rect check inflated the lethal zone at the diagonal
+  /// corners (~7px past the visible ball edge). Also checks the prior
+  /// frame's center so a pendulum that swung past the player between
+  /// frames isn't missed.
   @override
   bool intersects(Rect playerRect) {
-    final ball = Rect.fromCircle(
-      center: Offset(position.x, position.y),
-      radius: ballRadius,
-    );
-    return ball.overlaps(playerRect);
+    if (_circleHitsRect(position.x, position.y, playerRect)) return true;
+    if (_prevPositionInitialized &&
+        _circleHitsRect(_prevPosition.x, _prevPosition.y, playerRect)) {
+      return true;
+    }
+    return false;
+  }
+
+  bool _circleHitsRect(double cx, double cy, Rect r) {
+    final closestX = cx.clamp(r.left, r.right);
+    final closestY = cy.clamp(r.top, r.bottom);
+    final dx = cx - closestX;
+    final dy = cy - closestY;
+    return dx * dx + dy * dy <= ballRadius * ballRadius;
   }
 
   @override

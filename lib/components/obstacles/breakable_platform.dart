@@ -69,7 +69,16 @@ class BreakablePlatform extends GameObstacle {
 
   @override
   bool intersects(Rect playerRect) {
-    if (isGone) return false;
+    // Once the player has triggered this platform, treat it as
+    // pass-through for the rest of the crumble animation. The platform
+    // is visually fading out and `onPlayerHit` returns `none` anyway
+    // — keeping it solid for collision queries causes the obstacle
+    // pipeline to keep flagging it as a hit each frame, which:
+    //   1. visually reads as the player "stuck" inside a half-faded
+    //      platform without taking damage,
+    //   2. blocks the per-frame "single hit" early-out from advancing
+    //      to a real hazard the same frame would otherwise hit.
+    if (_consumed || isGone) return false;
     return super.intersects(playerRect);
   }
 

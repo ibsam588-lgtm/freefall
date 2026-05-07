@@ -24,6 +24,12 @@ class MovingBlock extends GameObstacle {
   final double maxX;
   double _speed; // signed: + moves right, - moves left
 
+  /// Block's center X at the START of the most recent frame. Used by
+  /// [intersects] to sweep the block's body across the frame so a fast
+  /// patrol (up to 300 px/s, ~10px per 1/30s frame) can't miss a
+  /// player whose path the block crossed mid-frame.
+  double _prevPositionX = double.nan;
+
   MovingBlock({
     required super.obstacleId,
     required Vector2 worldPosition,
@@ -49,6 +55,8 @@ class MovingBlock extends GameObstacle {
   @override
   void update(double dt) {
     super.update(dt);
+    if (_prevPositionX.isNaN) _prevPositionX = position.x;
+    final priorX = position.x;
     position.x += _speed * dt;
     final halfW = size.x / 2;
 
@@ -61,6 +69,24 @@ class MovingBlock extends GameObstacle {
       position.x = maxX - halfW;
       _speed = -_speed.abs();
     }
+    _prevPositionX = priorX;
+  }
+
+  /// Swept hitbox: union of the block's pre- and post-update AABB so a
+  /// fast patrol can't slide past the player between physics steps.
+  @override
+  bool intersects(Rect playerRect) {
+    if (super.intersects(playerRect)) return true;
+    if (_prevPositionX.isNaN || _prevPositionX == position.x) return false;
+    final halfW = size.x / 2;
+    final halfH = size.y / 2;
+    final swept = Rect.fromLTRB(
+      math.min(position.x, _prevPositionX) - halfW,
+      position.y - halfH,
+      math.max(position.x, _prevPositionX) + halfW,
+      position.y + halfH,
+    );
+    return swept.overlaps(playerRect);
   }
 
   @override

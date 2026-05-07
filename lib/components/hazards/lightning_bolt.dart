@@ -36,6 +36,13 @@ class LightningBolt extends GameObstacle {
   bool _active = false;
   double _phaseT = 0;
 
+  /// Wall-clock dt of the most recent update. Lets [intersects] answer
+  /// "was this bolt active at ANY moment during the just-finished
+  /// frame?" — strikes that lasted 90% of a 33ms frame but flipped off
+  /// at the end would otherwise be invisible to the post-physics
+  /// collision pass and let the player walk through a flash.
+  double _lastDt = 0;
+
   /// Random initial offset so a row of bolts doesn't strobe in lockstep.
   LightningBolt({
     required super.obstacleId,
@@ -69,16 +76,47 @@ class LightningBolt extends GameObstacle {
   @override
   void update(double dt) {
     super.update(dt);
+    _lastDt = dt;
     _phaseT += dt;
     const cycle = flashDuration + cooldownDuration;
     if (_phaseT >= cycle) _phaseT -= cycle;
     _active = _phaseT < flashDuration;
   }
 
+  /// True iff the active flash window overlapped ANY moment during the
+  /// just-finished frame [_phaseT - _lastDt .. _phaseT]. Wraps the cycle
+  /// so a window straddling the cooldown→flash boundary still counts.
+  bool _wasActiveDuringFrame() {
+    if (_active) return true;
+    if (_lastDt <= 0) return false;
+    const cycle = flashDuration + cooldownDuration;
+    var startT = _phaseT - _lastDt;
+    if (startT < 0) startT += cycle;
+    final endT = _phaseT;
+    if (startT <= endT) {
+      return startT < flashDuration;
+    }
+    // Wrapped: frame straddled the cycle reset, so it definitely crossed
+    // the [0..flashDuration] active window.
+    return true;
+  }
+
+  /// Tighter hitbox than the parent AABB — the visible zigzag peaks at
+  /// `cx ± size.x*0.35`, so the AABB's full half-width includes ~5px of
+  /// invisible-but-lethal space on each side. Use the actual zigzag
+  /// envelope plus the player's circumscribed radius for forgiveness.
   @override
   bool intersects(Rect playerRect) {
-    if (!_active) return false;
-    return super.intersects(playerRect);
+    if (!_wasActiveDuringFrame()) return false;
+    final localCx = playerRect.center.dx - position.x;
+    final localCy = playerRect.center.dy - position.y;
+    final r = math.min(playerRect.width, playerRect.height) / 2;
+    // Reject outside the bolt's vertical span (with circle forgiveness).
+    if (localCy < -size.y / 2 - r || localCy > size.y / 2 + r) return false;
+    // Horizontal: the zigzag peaks reach 35% of size.x to either side
+    // (see _renderActiveBolt). Use that as the lethal half-width.
+    final halfW = size.x * 0.35;
+    return localCx.abs() <= halfW + r;
   }
 
   @override

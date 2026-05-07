@@ -61,15 +61,18 @@ class MagnetObstacle extends GameObstacle {
     return delta.normalized() * (maxPullForce * strength);
   }
 
-  /// Tighter contact rect than the full size box: only the inner core
-  /// damages on contact. The pull field itself isn't a hit.
+  /// Circle-vs-AABB distance test. Only the inner core damages on
+  /// contact — the pull field itself isn't a hit. The previous
+  /// rect-vs-rect check was identical to the parent AABB (size ==
+  /// 2*bodyRadius), so the "tighter" comment was a lie; this one is
+  /// genuinely tighter at the diagonal corners.
   @override
   bool intersects(Rect playerRect) {
-    final core = Rect.fromCircle(
-      center: Offset(position.x, position.y),
-      radius: bodyRadius,
-    );
-    return core.overlaps(playerRect);
+    final closestX = position.x.clamp(playerRect.left, playerRect.right);
+    final closestY = position.y.clamp(playerRect.top, playerRect.bottom);
+    final dx = position.x - closestX;
+    final dy = position.y - closestY;
+    return dx * dx + dy * dy <= bodyRadius * bodyRadius;
   }
 
   @override

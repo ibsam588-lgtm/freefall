@@ -49,10 +49,21 @@ class SpeedGate extends GameObstacle {
     if (_consumed) _consumedT += dt;
   }
 
+  /// Ring-band hitbox: the gate is a hollow ring, not a solid disc.
+  /// Player must cross the visible band to consume the gate. The old
+  /// AABB-overlap fired even when the player was in the empty middle
+  /// of the ring, which felt like the gate was triggering at random.
   @override
   bool intersects(Rect playerRect) {
     if (_consumed) return false;
-    return super.intersects(playerRect);
+    final cx = playerRect.center.dx - position.x;
+    final cy = playerRect.center.dy - position.y;
+    final dist = math.sqrt(cx * cx + cy * cy);
+    final r = math.min(playerRect.width, playerRect.height) / 2;
+    // Player must be within the ring band, padded by their own radius.
+    final innerR = ringRadius - ringThickness / 2 - r;
+    final outerR = ringRadius + ringThickness / 2 + r;
+    return dist >= innerR && dist <= outerR;
   }
 
   @override

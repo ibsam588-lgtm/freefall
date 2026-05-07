@@ -28,6 +28,16 @@ class RotatingObstacle extends GameObstacle {
   final double angularSpeed; // signed
   double _rotation = 0;
 
+  /// Arm angle at the START of the most recent frame. Stored so that
+  /// [intersects] can check both the previous and current rotation.
+  /// WHY: [_rotation] is already advanced by [update] before the
+  /// collision pass runs. If an arm was in the player's path at frame
+  /// start and has since rotated away, the end-of-frame-only check
+  /// would miss the contact. Testing both endpoints covers all cases
+  /// given that max angular travel per frame (~0.1 rad) is smaller than
+  /// the player's angular width from the arm (~0.36 rad at arm tip).
+  double _prevRotation = 0;
+
   RotatingObstacle({
     required super.obstacleId,
     required Vector2 worldPosition,
@@ -59,6 +69,7 @@ class RotatingObstacle extends GameObstacle {
   @override
   void update(double dt) {
     super.update(dt);
+    _prevRotation = _rotation; // snapshot before advancing
     _rotation += angularSpeed * dt;
   }
 
@@ -73,27 +84,39 @@ class RotatingObstacle extends GameObstacle {
 
     // Each arm: rotate the player rect into the arm's local frame and
     // do an AABB overlap with the arm's axis-aligned local box.
+    //
+    // We test both [_prevRotation] (arm position at frame start) and
+    // [_rotation] (arm position at frame end). The collision pass sweeps
+    // the player through multiple positions between those two extremes,
+    // but the arm angle is always the end-of-frame value for every
+    // substep — so an arm that was in the player's path at frame start
+    // and has since rotated away would go undetected without this.
+    // Checking both endpoints is sufficient because the max angular
+    // travel per frame (~0.1 rad at maxAngularSpeed) is less than the
+    // player's angular width as seen from the arm (~0.36 rad at tip).
     final px = playerRect.center.dx - position.x;
     final py = playerRect.center.dy - position.y;
     final r2 = math.max(playerRect.width, playerRect.height) / 2;
 
-    for (int i = 0; i < armCount; i++) {
-      final angle = _rotation + i * (math.pi * 2 / armCount);
-      final c = math.cos(-angle);
-      final s = math.sin(-angle);
-      final localX = px * c - py * s;
-      final localY = px * s + py * c;
+    // Arm extends from x=0..armLength, half-width armWidth/2 around y=0.
+    // Inflate by the player's circumscribed half-extent for a cheap
+    // capsule-circle approximation.
+    final armRect = Rect.fromLTWH(
+      -r2,
+      -armWidth / 2 - r2,
+      armLength + 2 * r2,
+      armWidth + 2 * r2,
+    );
 
-      // Arm extends from x=0..armLength, half-width armWidth/2 around y=0.
-      // Inflate by the player's circumscribed half-extent for a cheap
-      // capsule-circle approximation.
-      final armRect = Rect.fromLTWH(
-        -r2,
-        -armWidth / 2 - r2,
-        armLength + 2 * r2,
-        armWidth + 2 * r2,
-      );
-      if (armRect.contains(Offset(localX, localY))) return true;
+    for (final baseAngle in [_rotation, _prevRotation]) {
+      for (int i = 0; i < armCount; i++) {
+        final angle = baseAngle + i * (math.pi * 2 / armCount);
+        final c = math.cos(-angle);
+        final s = math.sin(-angle);
+        final localX = px * c - py * s;
+        final localY = px * s + py * c;
+        if (armRect.contains(Offset(localX, localY))) return true;
+      }
     }
     return false;
   }

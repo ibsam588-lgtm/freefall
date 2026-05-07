@@ -46,13 +46,15 @@ class Jellyfish extends GameObstacle {
     if (_rearmT > 0) _rearmT -= dt;
   }
 
+  /// Circle-vs-AABB distance test. The old rect-vs-rect check overlapped
+  /// at the AABB's diagonal corners, ~6px past the visible bell edge.
   @override
   bool intersects(Rect playerRect) {
-    final body = Rect.fromCircle(
-      center: Offset(position.x, position.y),
-      radius: bodyRadius,
-    );
-    return body.overlaps(playerRect);
+    final closestX = position.x.clamp(playerRect.left, playerRect.right);
+    final closestY = position.y.clamp(playerRect.top, playerRect.bottom);
+    final dx = position.x - closestX;
+    final dy = position.y - closestY;
+    return dx * dx + dy * dy <= bodyRadius * bodyRadius;
   }
 
   @override

@@ -35,6 +35,12 @@ class CameraSystem implements GameSystem {
   double _currentSpeed = baseSpeed;
   double _scrolledPixels = 0;
 
+  // Active speed-gate boost. Adds [_boostAmount] to the depth-driven
+  // base speed for [_boostRemaining] seconds. Stacking calls extends
+  // the timer rather than summing amounts (one boost active at a time).
+  double _boostAmount = 0;
+  double _boostRemaining = 0;
+
   /// Position of the player in world coordinates. The owner sets this each
   /// frame; CameraSystem uses it for any future "look-ahead" behavior and
   /// exposes it for follow logic.
@@ -51,13 +57,39 @@ class CameraSystem implements GameSystem {
   /// How deep the player has fallen, in meters. The HUD reads this.
   double get currentDepthMeters => _scrolledPixels / pixelsPerMeter;
 
+  /// Seconds remaining on the current speed-gate boost. 0 when no boost
+  /// is active. Exposed for tests and HUD diagnostics.
+  double get boostRemaining => _boostRemaining;
+
+  /// Speed bonus currently being applied on top of the depth-driven
+  /// base speed (px/s). 0 when no boost is active.
+  double get boostAmount => _boostRemaining > 0 ? _boostAmount : 0;
+
+  /// Apply a temporary speed bonus on top of the depth-driven base
+  /// speed. Re-calling resets the timer (no stacking) — a player who
+  /// hits two gates back-to-back gets the longer total boost, not a
+  /// doubled amount.
+  void applySpeedBoost(double amount, double duration) {
+    _boostAmount = amount;
+    _boostRemaining = duration;
+  }
+
   @override
   void update(double dt) {
     _scrolledPixels += _currentSpeed * dt;
 
-    // Speed = base + 10 * floor(depth / 500m), capped at maxSpeed.
+    if (_boostRemaining > 0) {
+      _boostRemaining -= dt;
+      if (_boostRemaining <= 0) {
+        _boostRemaining = 0;
+        _boostAmount = 0;
+      }
+    }
+
+    // Speed = base + 10 * floor(depth / 500m) + active boost, capped at maxSpeed.
     final steps = (_scrolledPixels / _distancePerStep).floor();
-    final target = baseSpeed + steps * speedIncrement;
+    final base = baseSpeed + steps * speedIncrement;
+    final target = base + (_boostRemaining > 0 ? _boostAmount : 0);
     _currentSpeed = target > maxSpeed ? maxSpeed : target;
 
     zoneManager?.update(currentDepthMeters);
@@ -67,6 +99,8 @@ class CameraSystem implements GameSystem {
   void reset() {
     _currentSpeed = baseSpeed;
     _scrolledPixels = 0;
+    _boostAmount = 0;
+    _boostRemaining = 0;
     playerWorldPosition.setZero();
     zoneManager?.reset();
   }

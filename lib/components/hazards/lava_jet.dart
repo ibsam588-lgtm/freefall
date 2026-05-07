@@ -25,6 +25,13 @@ class LavaJet extends GameObstacle {
   double _phaseT;
   bool _firing = false;
 
+  /// Wall-clock dt of the most recent update. Used by [intersects] to
+  /// answer "was this jet firing at any moment during the just-finished
+  /// frame?" instead of just checking the post-update endpoint — a
+  /// strike that lasted 95% of a 33ms frame but flipped off at the end
+  /// would otherwise be invisible to the post-physics collision pass.
+  double _lastDt = 0;
+
   LavaJet({
     required super.obstacleId,
     required Vector2 worldPosition,
@@ -46,16 +53,59 @@ class LavaJet extends GameObstacle {
   @override
   void update(double dt) {
     super.update(dt);
+    _lastDt = dt;
     _phaseT += dt;
     const cycle = fireDuration + cooldownDuration;
     if (_phaseT >= cycle) _phaseT -= cycle;
     _firing = _phaseT < fireDuration;
   }
 
+  /// True iff the jet's active window overlapped any moment during the
+  /// just-finished frame [_phaseT - _lastDt .. _phaseT]. Wraps the cycle
+  /// so a window that straddled the cooldown→fire boundary still
+  /// counts.
+  bool _wasFiringDuringFrame() {
+    if (_firing) return true;
+    if (_lastDt <= 0) return false;
+    const cycle = fireDuration + cooldownDuration;
+    var startT = _phaseT - _lastDt;
+    if (startT < 0) startT += cycle;
+    final endT = _phaseT;
+    if (startT <= endT) {
+      // Linear range — fired if any part of [startT..endT] is below fireDuration.
+      return startT < fireDuration;
+    }
+    // Wrapped range — split into [startT..cycle) and [0..endT].
+    return startT < cycle || endT > 0; // endT > 0 guaranteed; cycle wrap means we crossed 0.
+  }
+
+  /// Trapezoid hitbox matching the visible cone taper. Cone is
+  /// [coneBaseWidth] across at the base, [coneTipWidth] at the tip.
+  /// AABB-vs-AABB on the parent rect would falsely include the cone's
+  /// outer corners (visually empty but lethal).
   @override
   bool intersects(Rect playerRect) {
-    if (!_firing) return false;
-    return super.intersects(playerRect);
+    if (!_wasFiringDuringFrame()) return false;
+    final localCx = playerRect.center.dx - position.x;
+    final localCy = playerRect.center.dy - position.y;
+    final r = math.min(playerRect.width, playerRect.height) / 2;
+
+    // Cone runs from baseY to tipY in the component's local frame
+    // (origin = component center, so y in [-size.y/2 .. size.y/2]).
+    final baseY = direction < 0 ? size.y / 2 : -size.y / 2;
+    final tipY = direction < 0 ? -size.y / 2 : size.y / 2;
+
+    // Reject above/below the cone's vertical span (with a circle-radius
+    // forgiveness).
+    final topY = math.min(baseY, tipY);
+    final botY = math.max(baseY, tipY);
+    if (localCy < topY - r || localCy > botY + r) return false;
+
+    // Clamp to the cone's vertical extent for the half-width lerp.
+    final clampedY = localCy.clamp(topY, botY);
+    final t = ((clampedY - baseY) / (tipY - baseY)).clamp(0.0, 1.0);
+    final halfW = (coneBaseWidth + (coneTipWidth - coneBaseWidth) * t) / 2;
+    return localCx.abs() <= halfW + r;
   }
 
   @override

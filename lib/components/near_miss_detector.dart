@@ -59,12 +59,15 @@ class NearMissDetector {
     final hits = <GameObstacle>[];
     for (final o in obstacles) {
       if (_cooldowns.containsKey(o.obstacleId)) continue;
-      final box = o.hitbox;
-      // Two predicates:
+      // Use the obstacle's own [intersects] for both predicates so that
+      // tightly-shaped hazards (rotating arms, gap-wall halves, jellies,
+      // bolt zigzags, etc.) score near-miss against the same geometry
+      // they damage against. Using the loose AABB here over-fires
+      // near-miss on obstacles whose tight test would have rejected.
       //   a) inflated player rect overlaps obstacle (within 10px), AND
       //   b) raw player rect does NOT overlap obstacle (else: a hit).
-      if (!inflated.overlaps(box)) continue;
-      if (playerRect.overlaps(box)) continue;
+      if (!o.intersects(inflated)) continue;
+      if (o.intersects(playerRect)) continue;
       hits.add(o);
       _cooldowns[o.obstacleId] = sameObstacleCooldown;
     }
