@@ -459,16 +459,30 @@ class ZoneBackground extends PositionComponent {
   }
 
   void _renderCloudParticle(Canvas canvas, _Particle p) {
-    final paint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.16)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
+    // Two concentric soft ovals approximate a blurred cloud puff without
+    // a per-frame MaskFilter.blur — the blur is GPU-expensive at 36
+    // particles × 60 fps and was the dominant background cost on
+    // mid-tier devices. The overlap of a wide-low-alpha and a tight-
+    // higher-alpha oval reads identically at viewing distance.
+    final outer = Paint()
+      ..color = Colors.white.withValues(alpha: 0.06);
+    final inner = Paint()
+      ..color = Colors.white.withValues(alpha: 0.18);
     canvas.drawOval(
       Rect.fromCenter(
         center: Offset(p.x, p.y),
-        width: p.radius * 2.6,
-        height: p.radius * 0.9,
+        width: p.radius * 3.2,
+        height: p.radius * 1.2,
       ),
-      paint,
+      outer,
+    );
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: Offset(p.x, p.y),
+        width: p.radius * 2.0,
+        height: p.radius * 0.7,
+      ),
+      inner,
     );
   }
 
@@ -486,13 +500,18 @@ class ZoneBackground extends PositionComponent {
       p.radius * (0.8 + 0.5 * pulse),
       Paint()..color = color,
     );
-    // Subtle accent ring so the dots feel zone-tinted.
+    // Subtle accent ring — replaced the old MaskFilter.blur with a
+    // simple low-alpha second draw, which renders the same "soft halo"
+    // read at a fraction of the GPU cost.
     canvas.drawCircle(
       Offset(p.x, p.y),
       p.radius * 1.8,
-      Paint()
-        ..color = accent.withValues(alpha: 0.12 * pulse)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
+      Paint()..color = accent.withValues(alpha: 0.10 * pulse),
+    );
+    canvas.drawCircle(
+      Offset(p.x, p.y),
+      p.radius * 1.2,
+      Paint()..color = accent.withValues(alpha: 0.18 * pulse),
     );
   }
 
@@ -538,12 +557,19 @@ class ZoneBackground extends PositionComponent {
       const Color(0xFFFFE066),
       flicker,
     )!;
+    // Replaced MaskFilter.blur with a two-stage halo (large faint +
+    // smaller solid). At 36 embers × 60 fps the per-particle blur was
+    // a measurable mid-tier device drag.
+    final r = p.radius * (0.8 + 0.4 * flicker);
     canvas.drawCircle(
       Offset(p.x, p.y),
-      p.radius * (0.8 + 0.4 * flicker),
-      Paint()
-        ..color = hot.withValues(alpha: 0.85 * flicker)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.5),
+      r * 1.8,
+      Paint()..color = hot.withValues(alpha: 0.25 * flicker),
+    );
+    canvas.drawCircle(
+      Offset(p.x, p.y),
+      r,
+      Paint()..color = hot.withValues(alpha: 0.85 * flicker),
     );
   }
 }

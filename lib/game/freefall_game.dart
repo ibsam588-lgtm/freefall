@@ -130,12 +130,15 @@ class FreefallGame extends FlameGame {
   /// current run. Cleared by [restartRun].
   bool _runEnded = false;
 
-  /// Player Y at the start of the current frame (before super.update
-  /// advances physics). Used by [_playerHitbox] to sweep the collision
-  /// rect across the frame's vertical travel — at terminal velocity the
-  /// orb covers ~13px / 60Hz step, which would silently skip a 20px-
-  /// tall platform if we only checked the post-update position.
+  /// Player position at the start of the current frame (before
+  /// super.update advances physics). Used by [_playerHitbox] to sweep
+  /// the collision rect across the frame's full 2D travel — at terminal
+  /// velocity the orb covers ~13px / 60Hz step (up to 28px per dt-clamp
+  /// frame), which would silently skip a 20px-tall platform if we only
+  /// checked the post-update position. Both axes are tracked so a
+  /// diagonal traversal can't slip past a platform's edge either.
   double _prevPlayerY = 0;
+  double _prevPlayerX = 0;
 
   /// Phase 10: optional. When set, the game routes in-run signals
   /// (combo, gem, zone, hit, speed gate) into the manager so unlock
@@ -314,6 +317,7 @@ class FreefallGame extends FlameGame {
       playWidth: logicalWidth,
     );
     _prevPlayerY = player.position.y;
+    _prevPlayerX = player.position.x;
     await world.add(player);
 
     // Zone-name flash overlay sits in the camera viewport so it stays
@@ -494,10 +498,11 @@ class FreefallGame extends FlameGame {
       onRunEnded?.call();
     }
 
-    // Snapshot the pre-physics Y so the post-physics collision pass can
-    // sweep the AABB across the frame's vertical travel and not tunnel
-    // through thin platforms.
+    // Snapshot the pre-physics position so the post-physics collision
+    // pass can sweep the AABB across the frame's full 2D travel and
+    // not tunnel through thin platforms.
     _prevPlayerY = player.position.y;
+    _prevPlayerX = player.position.x;
 
     super.update(clamped);
 
@@ -512,10 +517,21 @@ class FreefallGame extends FlameGame {
     // reflects this frame's physics. Skipped during i-frames so a hit that
     // already triggered the damage/invincibility cycle can't double-fire.
     if (player.isAlive && !player.isInvincible) {
+      final sweep = _playerHitbox();
       final hitObstacles = collisionSystem.queryPlayerHits(
-        _playerHitbox(),
+        sweep,
         obstacleManager.activeObstacles,
       );
+      // Sort by signed Y-distance from the player center: a downward-
+      // falling player should resolve hits on the topmost obstacle
+      // first, so a thin platform on the leading edge of the sweep is
+      // always the first effect applied. Without this, iteration order
+      // is just spawn-insertion order, so two planks tunneled in one
+      // frame could resolve in a non-deterministic order.
+      if (hitObstacles.length > 1) {
+        hitObstacles.sort((a, b) =>
+            a.position.y.compareTo(b.position.y));
+      }
       for (final obstacle in hitObstacles) {
         final effect = obstacle.onPlayerHit();
         switch (effect) {
@@ -557,6 +573,7 @@ class FreefallGame extends FlameGame {
     ghostRunner?.onRunStarted();
     player.respawn();
     _prevPlayerY = player.position.y;
+    _prevPlayerX = player.position.x;
     // Phase 11: respawn cue + restart the music for the starting zone
     // (Stratosphere). playZoneMusic dedups so a fresh instance whose
     // last music was already Stratosphere stays playing.
@@ -586,20 +603,41 @@ class FreefallGame extends FlameGame {
   int get totalSimSteps => gameLoop.totalSteps;
 
   /// World-space AABB of the player orb, swept across this frame's
-  /// vertical travel so a fast-falling orb can't tunnel through a thin
-  /// (20px) platform between physics steps. The horizontal extent stays
-  /// at the orb radius — lateral travel per frame is small relative to
-  /// the orb diameter so a horizontal sweep would just inflate false
-  /// positives in near-miss detection.
+  /// full 2D travel so a fast-falling diagonal orb can't tunnel through
+  /// a thin (20px) platform between physics steps. Without sweeping
+  /// both axes a fast diagonal cross — common when a tilt input rolls
+  /// the orb laterally during a long fall — could pass through the
+  /// corner of a platform whose horizontal extent the post-update orb
+  /// barely misses. We additionally clamp each axis's sweep span to a
+  /// sane upper bound (`maxSweepDistance`) so a teleport (respawn,
+  /// pause-resume gap) doesn't produce a screen-spanning hitbox that
+  /// hits every obstacle in flight.
+  static const double maxSweepDistance = 80;
   Rect _playerHitbox() {
     const r = Player.radius;
-    final topY = math.min(player.position.y, _prevPlayerY) - r;
-    final bottomY = math.max(player.position.y, _prevPlayerY) + r;
+    final cx = player.position.x;
+    final cy = player.position.y;
+
+    // Endpoint of the sweep on each axis: the previous position,
+    // clamped so an unrealistic jump (respawn, paused frame) doesn't
+    // explode the hitbox. The clamp pulls the sweep endpoint back
+    // toward the current center, never beyond it.
+    final dy = cy - _prevPlayerY;
+    final dx = cx - _prevPlayerX;
+    final clampedDy = dy.abs() > maxSweepDistance
+        ? maxSweepDistance * (dy.isNegative ? -1 : 1)
+        : dy;
+    final clampedDx = dx.abs() > maxSweepDistance
+        ? maxSweepDistance * (dx.isNegative ? -1 : 1)
+        : dx;
+    final prevX = cx - clampedDx;
+    final prevY = cy - clampedDy;
+
     return Rect.fromLTRB(
-      player.position.x - r,
-      topY,
-      player.position.x + r,
-      bottomY,
+      math.min(cx, prevX) - r,
+      math.min(cy, prevY) - r,
+      math.max(cx, prevX) + r,
+      math.max(cy, prevY) + r,
     );
   }
 }

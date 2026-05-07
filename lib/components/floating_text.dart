@@ -6,6 +6,13 @@
 //
 // Self-disposing: the component removes itself from its parent when
 // its life timer hits zero, so callers can just `world.add` and forget.
+//
+// Performance note: at peak we can have ~60 FloatingTexts alive during
+// a long combo (near-miss spam). The naive implementation allocated a
+// TextPainter and called `.layout()` every frame, which burns
+// measurable time on Skia's text measurement. We re-layout only when
+// the alpha actually changes by more than [_alphaQuantum] (i.e. ~20
+// times per second instead of 60), then paint the cached painter.
 
 import 'package:flame/components.dart';
 import 'package:flutter/material.dart';
@@ -17,6 +24,12 @@ class FloatingText extends PositionComponent {
   /// Default fade-out duration in seconds.
   static const double defaultLifetime = 1.0;
 
+  /// Quantize the rendered alpha to this granularity. 0.05 -> 20
+  /// distinct alpha steps over the fade window, which is visually
+  /// indistinguishable from a smooth fade but cuts TextPainter.layout
+  /// calls by ~3x at 60 fps.
+  static const double _alphaQuantum = 0.05;
+
   final String text;
   final Color color;
   final double fontSize;
@@ -25,6 +38,11 @@ class FloatingText extends PositionComponent {
 
   // Cached starting Y so we can interpolate position based on life.
   late double _startY;
+
+  // Cached painter; rebuilt when [_paintedAlpha] no longer matches the
+  // quantized current alpha. Null until the first paint pass.
+  TextPainter? _painter;
+  double _paintedAlpha = -1;
 
   FloatingText({
     required this.text,
@@ -64,24 +82,32 @@ class FloatingText extends PositionComponent {
 
   @override
   void render(Canvas canvas) {
-    final alpha = lifeFraction;
-    final tp = TextPainter(
-      text: TextSpan(
-        text: text,
-        style: TextStyle(
-          color: color.withValues(alpha: alpha),
-          fontSize: fontSize,
-          fontWeight: FontWeight.w900,
-          shadows: [
-            Shadow(
-              color: const Color(0xFF000000).withValues(alpha: alpha * 0.7),
-              blurRadius: 4,
-            ),
-          ],
+    final raw = lifeFraction;
+    if (raw <= 0) return;
+    // Quantize to a small set of distinct alpha values; rebuild the
+    // painter only when we cross a step.
+    final alpha = (raw / _alphaQuantum).round() * _alphaQuantum;
+    if (_painter == null || alpha != _paintedAlpha) {
+      _painter = TextPainter(
+        text: TextSpan(
+          text: text,
+          style: TextStyle(
+            color: color.withValues(alpha: alpha),
+            fontSize: fontSize,
+            fontWeight: FontWeight.w900,
+            shadows: [
+              Shadow(
+                color: const Color(0xFF000000).withValues(alpha: alpha * 0.7),
+                blurRadius: 4,
+              ),
+            ],
+          ),
         ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
+        textDirection: TextDirection.ltr,
+      )..layout();
+      _paintedAlpha = alpha;
+    }
+    final tp = _painter!;
     tp.paint(
       canvas,
       Offset(size.x / 2 - tp.width / 2, size.y / 2 - tp.height / 2),
